@@ -23,11 +23,16 @@ const departments = [
   { name: 'Operations', color: '#c084fc' },
 ];
 
+import { getAllActivityLogs } from '../lib/api';
+
 export const SuperAdminDashboard = () => {
   const navigate = useNavigate();
+  const [activeView, setActiveView] = useState('directory');
   const [showUserModal, setShowUserModal] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchingAudit, setFetchingAudit] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState('');
 
@@ -40,6 +45,22 @@ export const SuperAdminDashboard = () => {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  useEffect(() => {
+    if (activeView === 'audit') fetchAudit();
+  }, [activeView]);
+
+  const fetchAudit = async () => {
+    setFetchingAudit(true);
+    try {
+      const logs = await getAllActivityLogs(100);
+      setAuditLogs(logs);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setFetchingAudit(false);
+    }
+  };
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -135,16 +156,40 @@ export const SuperAdminDashboard = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px' }}>
           <div>
             <p style={{ color: DS.muted, fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '4px' }}>Administrative Control</p>
-            <h1 style={{ color: DS.text, fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '6px' }}>Team Directory</h1>
-            <p style={{ color: DS.muted, fontSize: '0.875rem' }}>Manage organization members, assign roles, and control access permissions.</p>
+            <h1 style={{ color: DS.text, fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '6px' }}>
+              {activeView === 'directory' ? 'Team Directory' : 'System Audit Log'}
+            </h1>
+            <p style={{ color: DS.muted, fontSize: '0.875rem' }}>
+              {activeView === 'directory' 
+                ? 'Manage organization members, assign roles, and control access permissions.'
+                : 'Complete transparency of all system-wide actions and governance events.'}
+            </p>
           </div>
-          <motion.button 
-            whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} 
-            onClick={() => setShowUserModal(true)} 
-            style={{ background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', color: '#fff', border: 'none', borderRadius: '12px', padding: '12px 24px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 8px 20px rgba(14,165,233,0.3)' }}
-          >
-            <UserPlus size={18} /> Add New Member
-          </motion.button>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ display: 'flex', gap: '4px', background: DS.card, borderRadius: '12px', padding: '6px', border: `1px solid ${DS.border}` }}>
+              <button 
+                onClick={() => setActiveView('directory')}
+                style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: activeView === 'directory' ? 'rgba(14,165,233,0.2)' : 'transparent', color: activeView === 'directory' ? DS.primary : DS.muted, fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}
+              >
+                Directory
+              </button>
+              <button 
+                onClick={() => setActiveView('audit')}
+                style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: activeView === 'audit' ? 'rgba(14,165,233,0.2)' : 'transparent', color: activeView === 'audit' ? DS.primary : DS.muted, fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}
+              >
+                Audit Logs
+              </button>
+            </div>
+            {activeView === 'directory' && (
+              <motion.button 
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} 
+                onClick={() => setShowUserModal(true)} 
+                style={{ background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', color: '#fff', border: 'none', borderRadius: '12px', padding: '12px 24px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 8px 20px rgba(14,165,233,0.3)' }}
+              >
+                <UserPlus size={18} /> Add Member
+              </motion.button>
+            )}
+          </div>
         </div>
 
         {/* Stats Grid */}
@@ -167,67 +212,111 @@ export const SuperAdminDashboard = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: DS.surface, border: `1px solid ${DS.border}`, borderRadius: '10px', padding: '10px 16px', flex: 1 }}>
             <Search size={16} color={DS.muted} />
             <input 
-              type="text" placeholder="Search by name, email or department..." 
+              type="text" placeholder={activeView === 'directory' ? "Search by name, email or department..." : "Search actions, tickets or performers..."}
               value={search} onChange={e => setSearch(e.target.value)}
               style={{ background: 'none', border: 'none', outline: 'none', color: DS.text, fontSize: '0.85rem', width: '100%' }}
             />
           </div>
         </div>
 
-        {/* User Table */}
-        <div style={{ background: DS.card, borderRadius: '20px', border: `1px solid ${DS.border}`, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: 'rgba(14,165,233,0.04)' }}>
-                {['Team Member', 'System Role', 'Department', 'Assets', 'Actions'].map(h => (
-                  <th key={h} style={{ padding: '14px 20px', textAlign: 'left', fontSize: '0.65rem', fontWeight: 700, color: DS.muted, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredUsers.map(u => (
-                <tr 
-                  key={u.id} 
-                  onClick={() => fetchPortfolio(u)}
-                  style={{ borderTop: `1px solid ${DS.border}`, transition: 'background 0.2s', cursor: 'pointer' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(14,165,233,0.04)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                >
-                  <td style={{ padding: '16px 20px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #0ea5e9, #1e3a5f)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '11px', fontWeight: 800 }}>
-                        {u.name?.[0] || u.email?.[0]?.toUpperCase() || '?'}
-                      </div>
-                      <div>
-                        <p style={{ color: DS.text, fontWeight: 700, fontSize: '0.875rem', marginBottom: '2px' }}>{u.name || 'Pending Onboarding'}</p>
-                        <p style={{ color: DS.muted, fontSize: '0.75rem' }}>{u.email}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td style={{ padding: '16px 20px' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', fontWeight: 800, color: u.role === 'superadmin' ? '#c084fc' : u.role === 'admin' ? DS.primary : DS.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      <ShieldCheck size={14} /> {u.role}
-                    </span>
-                  </td>
-                  <td style={{ padding: '16px 20px' }}>
-                    <span style={{ color: DS.text, fontSize: '0.85rem', fontWeight: 600 }}>{u.department || 'General'}</span>
-                  </td>
-                  <td style={{ padding: '16px 20px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: DS.primary, fontWeight: 700, fontSize: '0.8rem' }}>
-                      <Monitor size={14} /> {u.assets?.length || 0}
-                    </div>
-                  </td>
-                  <td style={{ padding: '16px 20px' }}>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button style={{ width: '32px', height: '32px', borderRadius: '8px', border: `1px solid ${DS.border}`, background: 'transparent', color: DS.muted, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Edit2 size={14} /></button>
-                      <button style={{ width: '32px', height: '32px', borderRadius: '8px', border: `1px solid ${DS.border}`, background: 'transparent', color: '#ff4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} /></button>
-                    </div>
-                  </td>
+        {activeView === 'directory' ? (
+          <div style={{ background: DS.card, borderRadius: '20px', border: `1px solid ${DS.border}`, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: 'rgba(14,165,233,0.04)' }}>
+                  {['Team Member', 'System Role', 'Department', 'Assets', 'Actions'].map(h => (
+                    <th key={h} style={{ padding: '14px 20px', textAlign: 'left', fontSize: '0.65rem', fontWeight: 700, color: DS.muted, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {filteredUsers.map(u => (
+                  <tr 
+                    key={u.id} 
+                    onClick={() => fetchPortfolio(u)}
+                    style={{ borderTop: `1px solid ${DS.border}`, transition: 'background 0.2s', cursor: 'pointer' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(14,165,233,0.04)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <td style={{ padding: '16px 20px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #0ea5e9, #1e3a5f)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '11px', fontWeight: 800 }}>
+                          {u.name?.[0] || u.email?.[0]?.toUpperCase() || '?'}
+                        </div>
+                        <div>
+                          <p style={{ color: DS.text, fontWeight: 700, fontSize: '0.875rem', marginBottom: '2px' }}>{u.name || 'Pending Onboarding'}</p>
+                          <p style={{ color: DS.muted, fontSize: '0.75rem' }}>{u.email}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ padding: '16px 20px' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', fontWeight: 800, color: u.role === 'superadmin' ? '#c084fc' : u.role === 'admin' ? DS.primary : DS.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        <ShieldCheck size={14} /> {u.role}
+                      </span>
+                    </td>
+                    <td style={{ padding: '16px 20px' }}>
+                      <span style={{ color: DS.text, fontSize: '0.85rem', fontWeight: 600 }}>{u.department || 'General'}</span>
+                    </td>
+                    <td style={{ padding: '16px 20px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: DS.primary, fontWeight: 700, fontSize: '0.8rem' }}>
+                        <Monitor size={14} /> {u.assets?.length || 0}
+                      </div>
+                    </td>
+                    <td style={{ padding: '16px 20px' }}>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button style={{ width: '32px', height: '32px', borderRadius: '8px', border: `1px solid ${DS.border}`, background: 'transparent', color: DS.muted, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Edit2 size={14} /></button>
+                        <button style={{ width: '32px', height: '32px', borderRadius: '8px', border: `1px solid ${DS.border}`, background: 'transparent', color: '#ff4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div style={{ background: DS.card, borderRadius: '20px', border: `1px solid ${DS.border}`, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: 'rgba(14,165,233,0.04)' }}>
+                  {['Timestamp', 'Performer', 'Action Event', 'Linked Ticket'].map(h => (
+                    <th key={h} style={{ padding: '14px 20px', textAlign: 'left', fontSize: '0.65rem', fontWeight: 700, color: DS.muted, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {fetchingAudit ? (
+                  <tr><td colSpan={4} style={{ padding: '48px', textAlign: 'center' }}><Loader2 className="animate-spin" color={DS.primary} size={24} style={{ margin: '0 auto' }} /></td></tr>
+                ) : auditLogs.filter(log => 
+                  log.action.toLowerCase().includes(search.toLowerCase()) || 
+                  log.performer?.name?.toLowerCase().includes(search.toLowerCase()) ||
+                  log.ticket?.title?.toLowerCase().includes(search.toLowerCase())
+                ).map(log => (
+                  <tr key={log.id} style={{ borderTop: `1px solid ${DS.border}` }}>
+                    <td style={{ padding: '16px 20px', color: DS.muted, fontSize: '0.75rem' }}>{format(new Date(log.created_at), 'MMM d, HH:mm:ss')}</td>
+                    <td style={{ padding: '16px 20px' }}>
+                      <p style={{ color: DS.text, fontWeight: 700, fontSize: '0.8rem' }}>{log.performer?.name || 'System'}</p>
+                      <p style={{ color: DS.muted, fontSize: '0.65rem' }}>{log.performer?.email || 'automated-task@system'}</p>
+                    </td>
+                    <td style={{ padding: '16px 20px' }}>
+                      <span style={{ 
+                        padding: '4px 10px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 700,
+                        background: log.action.includes('Breach') || log.action.includes('Escalation') ? 'rgba(255,68,68,0.1)' : 'rgba(14,165,233,0.1)',
+                        color: log.action.includes('Breach') || log.action.includes('Escalation') ? '#ff4444' : DS.primary
+                      }}>
+                        {log.action}
+                      </span>
+                    </td>
+                    <td style={{ padding: '16px 20px' }}>
+                      <div onClick={() => navigate(`/tickets/${log.ticket_id}`)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: DS.text, fontSize: '0.75rem', fontWeight: 600 }}>
+                         {log.ticket?.title || 'System Action'} <ArrowRightLeft size={12} color={DS.muted} />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* User Asset Portfolio Slide-over */}

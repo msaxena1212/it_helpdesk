@@ -432,3 +432,14 @@ export const getActivityLogs = async (ticketId: string) => {
   if (error) throw error;
   return data;
 };
+
+export const getAllActivityLogs = async (limit = 50) => {
+  const { data, error } = await supabase
+    .from('activity_logs')
+    .select('*, performer:profiles!performed_by(name, email), ticket:tickets!ticket_id(title)')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return data;
+};
