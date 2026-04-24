@@ -93,6 +93,21 @@ The system expects a 4-column Excel structure for imports:
 
 ---
 
+## 🚀 Advancement: SLA & Escalation Engine (USP #2)
+
+### ❌ Current Problem
+In most helpdesks, SLA tracking is passive. Breaches go unnoticed, managers are only informed manually, and delays often compound without intervention.
+
+### ✅ Elite Upgrade
+Our **SLA & Escalation Engine** provides proactive governance:
+- **Multi-Stage Escalation**:
+    - **Stage 1 (Breach)**: Immediate notification to assigned admin.
+    - **Stage 2 (L1 - 2hrs post-breach)**: Automated priority upgrade to **Critical**.
+    - **Stage 3 (L2 - 4hrs post-breach)**: Automated **Senior Management Alert** via high-priority webhook.
+- **Visual Accountability**: Real-time escalation badges (L1/L2) on dashboards for instant visibility of high-risk tickets.
+
+---
+
 ## 🔐 Security & Governance
 - **Granular Permissions**: Built-in logic for Employee, Admin, and SuperAdmin roles.
 - **Activity Logging**: Every status change and ticket comment is timestamped and attributed to a performer.

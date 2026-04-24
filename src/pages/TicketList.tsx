@@ -32,6 +32,21 @@ const Badge = ({ status }: { status: string }) => {
   );
 };
 
+const EscalationBadge = ({ level }: { level: number }) => {
+  if (!level) return null;
+  return (
+    <span style={{
+      padding: '2px 8px', borderRadius: '6px',
+      fontSize: '0.6rem', fontWeight: 800, 
+      background: level >= 2 ? 'rgba(255,68,68,0.2)' : 'rgba(255,184,110,0.2)',
+      color: level >= 2 ? '#ff4444' : '#ffb86e',
+      marginLeft: '8px', border: `1px solid ${level >= 2 ? '#ff4444' : '#ffb86e'}33`
+    }}>
+      L{level} ESCALATED
+    </span>
+  );
+};
+
 export const TicketList = () => {
   const navigate = useNavigate();
   const [tickets, setTickets] = useState<any[]>([]);
@@ -172,7 +187,12 @@ export const TicketList = () => {
                     <p style={{ fontSize: '0.875rem', fontWeight: 600, color: DS.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</p>
                     <p style={{ fontSize: '0.7rem', color: DS.muted, textTransform: 'capitalize' }}>{t.issue_type} • {t.sub_type || 'General'}</p>
                   </td>
-                  <td style={{ padding: '18px 20px' }}><Badge status={t.status} /></td>
+                  <td style={{ padding: '18px 20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      <Badge status={t.status} />
+                      <EscalationBadge level={t.escalation_level} />
+                    </div>
+                  </td>
                   <td style={{ padding: '18px 20px' }}>
                     <span style={{ 
                       fontSize: '0.7rem', fontWeight: 800, 

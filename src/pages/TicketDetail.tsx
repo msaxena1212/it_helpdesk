@@ -299,8 +299,22 @@ export const TicketDetail = () => {
                 <span style={{ fontWeight: 800, color: ticket.priority === 'Critical' ? DS.danger : DS.warning }}>{ticket.priority}</span>
               </div>
               {isSlaBreached && (
-                <div style={{ marginTop: '12px', padding: '12px', background: 'rgba(255,68,68,0.1)', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', color: DS.danger, fontSize: '0.75rem', fontWeight: 700 }}>
-                  <ShieldAlert size={16} /> SLA BREACHED
+                <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ padding: '12px', background: 'rgba(255,68,68,0.1)', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', color: DS.danger, fontSize: '0.75rem', fontWeight: 700 }}>
+                    <ShieldAlert size={16} /> SLA BREACHED
+                  </div>
+                  
+                  {ticket.escalation_level >= 1 && (
+                    <div style={{ padding: '10px', background: 'rgba(255,184,110,0.1)', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', color: DS.warning, fontSize: '0.7rem', fontWeight: 700 }}>
+                      <AlertCircle size={14} /> LEVEL 1: AUTO-CRITICAL
+                    </div>
+                  )}
+                  
+                  {ticket.escalation_level >= 2 && (
+                    <div style={{ padding: '10px', background: 'rgba(255,68,68,0.15)', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', color: DS.danger, fontSize: '0.7rem', fontWeight: 800 }}>
+                      <ShieldAlert size={14} /> LEVEL 2: MGMT NOTIFIED
+                    </div>
+                  )}
                 </div>
               )}
             </div>

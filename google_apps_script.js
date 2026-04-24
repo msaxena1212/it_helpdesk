@@ -76,9 +76,31 @@ function doPost(e) {
       return successResponse("SLA Breach notification sent");
     }
 
+    // ROUTE 4: L2 ESCALATION (Senior Management)
+    if (payload.type === 'escalation_l2') {
+      sendL2EscalationEmail(payload);
+      return successResponse("L2 Escalation notification sent");
+    }
+
   } catch (error) {
     return errorResponse(error.toString());
   }
+}
+
+/**
+ * L2 Escalation Email Helper (Senior Management)
+ */
+function sendL2EscalationEmail(data) {
+  const subject = "🚨 CRITICAL ESCALATION: Ticket #" + (data.id?.substring(0, 8) || "N/A") + " remains unresolved!";
+  const body = "SENIOR MANAGEMENT ALERT: A ticket has reached Level 2 Escalation (4+ hours post-SLA breach).\n\n" +
+               "Ticket ID: #" + data.id + "\n" +
+               "Title: " + data.title + "\n" +
+               "Requester: " + (data.name || "N/A") + "\n" +
+               "Hours Overdue: " + (data.breach_age || "4+") + " hours\n\n" +
+               "Immediate intervention is required.\n" +
+               "View Details: " + (data.app_url || "CRM Dashboard");
+
+  MailApp.sendEmail(ADMIN_EMAIL, subject, body);
 }
 
 /**

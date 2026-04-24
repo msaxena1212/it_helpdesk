@@ -261,58 +261,102 @@ export const getInternalNotes = async (ticketId: string) => {
 };
 
 export const checkSLABreaches = async () => {
-  const now = new Date().toISOString();
+  const now = new Date();
+  const nowIso = now.toISOString();
   
-  // Find tickets where SLA deadline has passed and status is not 'Resolved' or 'Closed'
-  const { data: breachedTickets, error } = await supabase
+  // Find tickets that are past deadline and not closed
+  const { data: overdueTickets, error } = await supabase
     .from('tickets')
-    .select(`*, employee:employee_id(name)`)
-    .lt('sla_deadline', now)
-    .not('status', 'in', '("Resolved", "Closed")')
-    .eq('sla_breached', false); // Only get those not already marked
+    .select(`*, employee:profiles!employee_id(name)`)
+    .lt('sla_deadline', nowIso)
+    .not('status', 'in', '("Resolved", "Closed")');
 
   if (error) throw error;
 
-  for (const ticket of breachedTickets) {
-    // Mark as breached
-    await supabase.from('tickets').update({ sla_breached: true }).eq('id', ticket.id);
-
-    // Create Notification for Admins/SuperAdmins
-    await supabase.from('notifications').insert([{
-      type: 'SLA_BREACH',
-      title: 'SLA Breach Detected',
-      message: `Ticket ${ticket.id} (${ticket.title}) from ${ticket.employee?.name || 'Guest'} has breached its SLA target.`,
-      severity: 'Critical',
-      ticket_id: ticket.id
-    }]);
-
-    // Send Email via Webhook
+  for (const ticket of overdueTickets) {
+    const deadline = new Date(ticket.sla_deadline);
+    const breachAgeHours = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
     const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL;
-    if (googleWebhookUrl) {
-      fetch(googleWebhookUrl, {
-        method: 'POST',
-        mode: 'no-cors',
-        body: JSON.stringify({
-          type: 'sla_breach',
-          id: ticket.id,
-          title: ticket.title,
-          name: ticket.employee?.name || 'Guest',
-          priority: ticket.priority,
-          sla_deadline: ticket.sla_deadline,
-          app_url: window.location.origin + `/tickets/${ticket.id}`
-        })
-      }).catch(console.error);
+
+    // STAGE 1: Initial Breach (Immediate)
+    if (!ticket.sla_breached) {
+      await supabase.from('tickets').update({ sla_breached: true }).eq('id', ticket.id);
+      
+      await supabase.from('notifications').insert([{
+        type: 'SLA_BREACH',
+        title: 'SLA Breach Detected',
+        message: `Ticket #${ticket.id.substring(0,8)} has breached its SLA.`,
+        severity: 'High',
+        ticket_id: ticket.id
+      }]);
+
+      if (googleWebhookUrl) {
+        fetch(googleWebhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          body: JSON.stringify({
+            type: 'sla_breach',
+            id: ticket.id,
+            title: ticket.title,
+            name: ticket.employee?.name || ticket.guest_name || 'Guest',
+            priority: ticket.priority,
+            sla_deadline: ticket.sla_deadline,
+            app_url: window.location.origin + `/tickets/${ticket.id}`
+          })
+        }).catch(console.error);
+      }
+
+      await supabase.from('activity_logs').insert([{
+        ticket_id: ticket.id,
+        action: 'SLA Breached (Stage 0)',
+        performed_by: 'System'
+      }]);
     }
 
-    // Log in Activity
-    await supabase.from('activity_logs').insert([{
-      ticket_id: ticket.id,
-      action: 'SLA Breached',
-      performed_by: 'System'
-    }]);
+    // STAGE 2: L1 Escalation (2 Hours Post-Breach)
+    // Auto-escalate priority to Critical and notify admins
+    if (breachAgeHours >= 2 && ticket.escalation_level < 1) {
+      await supabase.from('tickets').update({ 
+        escalation_level: 1,
+        priority: 'Critical' 
+      }).eq('id', ticket.id);
+
+      await supabase.from('activity_logs').insert([{
+        ticket_id: ticket.id,
+        action: 'L1 Escalation: Priority Auto-Updated to Critical',
+        performed_by: 'System'
+      }]);
+    }
+
+    // STAGE 3: L2 Escalation (4 Hours Post-Breach)
+    // Notify Senior Management
+    if (breachAgeHours >= 4 && ticket.escalation_level < 2) {
+      await supabase.from('tickets').update({ escalation_level: 2 }).eq('id', ticket.id);
+
+      if (googleWebhookUrl) {
+        fetch(googleWebhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          body: JSON.stringify({
+            type: 'escalation_l2',
+            id: ticket.id,
+            title: ticket.title,
+            name: ticket.employee?.name || ticket.guest_name || 'Guest',
+            breach_age: Math.round(breachAgeHours),
+            app_url: window.location.origin + `/tickets/${ticket.id}`
+          })
+        }).catch(console.error);
+      }
+
+      await supabase.from('activity_logs').insert([{
+        ticket_id: ticket.id,
+        action: 'L2 Escalation: Senior Management Notified',
+        performed_by: 'System'
+      }]);
+    }
   }
 
-  return breachedTickets;
+  return overdueTickets;
 };
 
 export const getNotifications = async () => {
