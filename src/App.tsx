@@ -1,0 +1,82 @@
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Layout } from './components/Layout';
+import { Login } from './pages/Login';
+import { EmployeeDashboard } from './pages/EmployeeDashboard';
+import { AdminDashboard } from './pages/AdminDashboard';
+import { TicketList } from './pages/TicketList';
+import { SuperAdminDashboard } from './pages/SuperAdminDashboard';
+import { AnalyticsHub } from './pages/AnalyticsHub';
+import { SettingsHub } from './pages/SettingsHub';
+import { AssetHub } from './pages/AssetHub';
+import { AssetAudit } from './pages/AssetAudit';
+import { AuditSession } from './pages/AuditSession';
+import { TicketKanban } from './pages/TicketKanban';
+import { CreateTicket } from './pages/CreateTicket';
+import { TicketDetail } from './pages/TicketDetail';
+import { Assets } from './pages/Assets';
+import './index.css';
+
+import { AuthProvider, useAuth } from './lib/AuthContext';
+
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
+  
+  if (loading) return (
+    <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0b1326', flexDirection: 'column', gap: '16px' }}>
+      <img src="/logo.webp" alt="Zyno" style={{ width: '60px', opacity: 0.8 }} />
+      <div style={{ color: '#88929b', fontSize: '0.8rem', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600 }}>Loading...</div>
+    </div>
+  );
+  if (!user) return <Navigate to="/login" replace />;
+  
+  return <>{children}</>;
+};
+
+function AppRoutes() {
+  const { user } = useAuth();
+  const userRole = user?.user_metadata?.role || 'employee'; // fallback to employee
+
+  const renderDashboard = () => {
+    switch (userRole) {
+      case 'superadmin': 
+      case 'admin': return <AdminDashboard />;
+      default: return <EmployeeDashboard />;
+    }
+  };
+
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      
+      <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+        <Route path="/" element={renderDashboard()} />
+        <Route path="/tickets" element={<TicketList />} />
+        <Route path="/admin" element={<SuperAdminDashboard />} />
+        <Route path="/dashboard" element={<AdminDashboard />} />
+        <Route path="/analytics" element={<AnalyticsHub />} />
+        <Route path="/settings" element={<SettingsHub />} />
+        <Route path="/assets" element={<AssetHub />} />
+        <Route path="/assets/audit" element={<AssetAudit />} />
+        <Route path="/assets/audit-session" element={<AuditSession />} />
+        <Route path="/kanban" element={<TicketKanban />} />
+        <Route path="/create-ticket" element={<CreateTicket />} />
+        <Route path="/tickets/new" element={<CreateTicket />} />
+        <Route path="/tickets/:id" element={<TicketDetail />} />
+      </Route>
+
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <AppRoutes />
+      </Router>
+    </AuthProvider>
+  );
+}
+
+export default App;
