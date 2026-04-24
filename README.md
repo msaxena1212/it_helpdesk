@@ -108,6 +108,20 @@ Our **SLA & Escalation Engine** provides proactive governance:
 
 ---
 
+## 🚀 Advancement: Analytics & Decision Dashboard (USP #3)
+
+### ❌ Current Problem
+Data is often trapped in spreadsheets or hidden in row-level views. Managers lack real-time visibility into agent productivity, resolution bottlenecks, and historical trends.
+
+### ✅ Elite Upgrade
+The **Decision Dashboard** transforms raw data into actionable operational intelligence:
+- **Real-Time KPI Tracking**: Instant visibility into **Avg Resolution Time**, **SLA Breach Rates**, and **Ticket Volume Trends**.
+- **Agent Performance Matrix**: High-density analytics showing tickets per agent, resolution rates, and individual SLA compliance.
+- **Trend Visualization**: Daily and weekly time-series charts to identify peak volume periods and resource needs.
+- **Deep Category Analysis**: Horizontal distribution charts to pinpoint recurring software or hardware bottlenecks.
+
+---
+
 ## 🔐 Security & Governance
 - **Granular Permissions**: Built-in logic for Employee, Admin, and SuperAdmin roles.
 - **Activity Logging**: Every status change and ticket comment is timestamped and attributed to a performer.
