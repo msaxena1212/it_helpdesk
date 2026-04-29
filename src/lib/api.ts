@@ -16,6 +16,7 @@ export const PERMISSIONS = {
 export const ROLE_PERMISSIONS: Record<string, string[]> = {
   'employee': [PERMISSIONS.CREATE_TICKET],
   'admin': [PERMISSIONS.VIEW_ALL, PERMISSIONS.ASSIGN_TICKET, PERMISSIONS.UPDATE_STATUS, PERMISSIONS.MANAGE_ASSETS, PERMISSIONS.VIEW_ANALYTICS],
+  'inventory_manager': [PERMISSIONS.VIEW_ALL, PERMISSIONS.UPDATE_STATUS],
   'superadmin': Object.values(PERMISSIONS)
 };
 
@@ -117,6 +118,7 @@ export const createTicket = async (ticketData: any) => {
         mode: 'no-cors', // Critical for Google Apps Script redirects
         body: JSON.stringify({
           type: 'ticket',
+          id: data.id,
           name: ticketData.name || '',
           email: ticketData.email || '',
           department: ticketData.department || '',
@@ -135,6 +137,15 @@ export const createTicket = async (ticketData: any) => {
     }
   } else {
     console.warn("VITE_GOOGLE_WEBHOOK_URL is not set in .env");
+  }
+
+  // Create Calendar Reminder Event for Ticket SLA
+  if (data.sla_deadline) {
+    createReminderEvent(
+      `SLA Deadline: ${data.title}`, 
+      data.sla_deadline, 
+      `Reminder to resolve ticket #${data.id.substring(0,8)} by ${data.sla_deadline}`
+    );
   }
 
   return data;
@@ -179,15 +190,31 @@ export const assignTicket = async (ticketId: string, adminId: string) => {
     performed_by: userData.user?.id
   }]);
 
+  // Sync assignment to Google Sheets
+  const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL;
+  if (googleWebhookUrl) {
+    fetch(googleWebhookUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      body: JSON.stringify({
+        type: 'update',
+        id: ticketId,
+        assigned_to_name: data.assigned?.name || 'Unassigned',
+        status: data.status
+      })
+    }).catch(console.error);
+  }
+
   return data;
 };
 
 // Ticket Status State Machine
 export const VALID_TRANSITIONS: Record<string, string[]> = {
-  'Open': ['Assigned', 'In Progress', 'Waiting for User', 'Resolved', 'Closed'],
-  'Assigned': ['In Progress', 'Waiting for User', 'Resolved', 'Closed'],
-  'In Progress': ['Waiting for User', 'Resolved', 'Closed'],
+  'Open': ['Assigned', 'In Progress', 'Waiting for User', 'Waiting for Inventory', 'Resolved', 'Closed'],
+  'Assigned': ['In Progress', 'Waiting for User', 'Waiting for Inventory', 'Resolved', 'Closed'],
+  'In Progress': ['Waiting for User', 'Waiting for Inventory', 'Resolved', 'Closed'],
   'Waiting for User': ['In Progress', 'Resolved', 'Closed'],
+  'Waiting for Inventory': ['In Progress', 'Resolved', 'Closed'],
   'Resolved': ['In Progress', 'Closed'],
   'Closed': ['In Progress', 'Open']
 };
@@ -201,12 +228,19 @@ export const updateStatus = async (ticketId: string, oldStatus: string, newStatu
     throw new Error(`Invalid status transition: ${oldStatus} -> ${newStatus}`);
   }
 
+  const updateData: any = { 
+    status: newStatus,
+    updated_at: new Date().toISOString()
+  };
+
+  // Reset procurement status if moving OUT of Waiting for Inventory
+  if (oldStatus === 'Waiting for Inventory' && newStatus !== 'Waiting for Inventory') {
+    updateData.procurement_status = null;
+  }
+
   const { data, error } = await supabase
     .from('tickets')
-    .update({ 
-      status: newStatus,
-      updated_at: new Date().toISOString()
-    })
+    .update(updateData)
     .eq('id', ticketId)
     .select()
     .single();
@@ -227,6 +261,110 @@ export const updateStatus = async (ticketId: string, oldStatus: string, newStatu
     action: `Status changed from ${oldStatus} to ${newStatus}`,
     performed_by: userData.user.id
   }]);
+
+  // Sync status to Google Sheets
+  const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL;
+  if (googleWebhookUrl) {
+    fetch(googleWebhookUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      body: JSON.stringify({
+        type: 'update',
+        id: ticketId,
+        status: newStatus
+      })
+    }).catch(console.error);
+  }
+
+  return data;
+};
+
+export const requestInventory = async (ticketId: string, managerId: string, remarks: string) => {
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) throw new Error('Not authenticated');
+
+  const { data, error } = await supabase
+    .from('tickets')
+    .update({
+      status: 'Waiting for Inventory',
+      procurement_status: 'Requested',
+      inventory_manager_id: managerId,
+      inventory_remarks: remarks,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', ticketId)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  await supabase.from('activity_logs').insert([{
+    ticket_id: ticketId,
+    action: 'Inventory Requested',
+    performed_by: userData.user.id
+  }]);
+
+  // Create notification for Inventory Manager
+  await supabase.from('notifications').insert([{
+    user_id: managerId,
+    type: 'INVENTORY_REQUEST',
+    title: 'New Inventory Request',
+    message: `Part required for ticket #${ticketId.substring(0,8)}`,
+    severity: 'Info',
+    ticket_id: ticketId
+  }]);
+
+  return data;
+};
+
+export const updateProcurementStatus = async (ticketId: string, newStatus: string, details?: any) => {
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) throw new Error('Not authenticated');
+
+  const updatePayload: any = {
+    procurement_status: newStatus,
+    updated_at: new Date().toISOString()
+  };
+
+  if (details) {
+    if (details.supplier) updatePayload.procurement_supplier = details.supplier;
+    if (details.cost) updatePayload.procurement_cost = details.cost;
+    if (details.expectedDate) updatePayload.procurement_expected_date = details.expectedDate;
+    if (details.remarks) updatePayload.inventory_remarks = details.remarks;
+  }
+
+  const { data, error } = await supabase
+    .from('tickets')
+    .update(updatePayload)
+    .eq('id', ticketId)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  await supabase.from('activity_logs').insert([{
+    ticket_id: ticketId,
+    action: `Procurement: ${newStatus}`,
+    performed_by: userData.user.id
+  }]);
+
+  // Notify SuperAdmin if handover is pending
+  if (newStatus === 'Handover Pending') {
+    // Find superadmins
+    const { data: superadmins } = await supabase.from('profiles').select('id').eq('role', 'superadmin');
+    if (superadmins) {
+      await Promise.all(superadmins.map(sa => 
+        supabase.from('notifications').insert([{
+          user_id: sa.id,
+          type: 'INVENTORY_HANDOVER',
+          title: 'Inventory Ready for Handover',
+          message: `The requested part for ticket #${ticketId.substring(0,8)} is ready.`,
+          severity: 'Info',
+          ticket_id: ticketId
+        }])
+      ));
+    }
+  }
 
   return data;
 };
@@ -373,7 +511,7 @@ export const getNotifications = async () => {
 export const getAllUsers = async () => {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, name, email, department')
+    .select('id, name, email, department, role')
     .order('name');
   if (error) throw error;
   return data;
@@ -433,13 +571,147 @@ export const getActivityLogs = async (ticketId: string) => {
   return data;
 };
 
-export const getAllActivityLogs = async (limit = 50) => {
-  const { data, error } = await supabase
+export const getAllActivityLogs = async (limit = 100) => {
+  // We do a two-step fetch to handle 'System' entries where performed_by is not a UUID
+  const { data: logs, error } = await supabase
     .from('activity_logs')
-    .select('*, performer:profiles!performed_by(name, email), ticket:tickets!ticket_id(title)')
+    .select('*, ticket:tickets!ticket_id(title)')
     .order('created_at', { ascending: false })
     .limit(limit);
 
   if (error) throw error;
+
+  // Enrich with performer profile when performed_by is a valid UUID
+  const enriched = await Promise.all((logs || []).map(async (log) => {
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(log.performed_by || '');
+    if (!isUUID) return { ...log, performer: null };
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('name, email')
+      .eq('id', log.performed_by)
+      .single();
+    return { ...log, performer: profile };
+  }));
+
+  return enriched;
+};
+
+// --- Subscriptions API ---
+export const getSubscriptions = async () => {
+  const { data, error } = await supabase
+    .from('subscriptions')
+    .select('*, owner:profiles!owner_id(name, email)')
+    .order('next_due_date', { ascending: true });
+  if (error) throw error;
   return data;
+};
+
+export const createSubscription = async (subData: any) => {
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) throw new Error('Not authenticated');
+
+  const { data, error } = await supabase
+    .from('subscriptions')
+    .insert([{
+      ...subData,
+      owner_id: userData.user.id
+    }])
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  // Create Calendar Reminder for Subscription
+  if (data.next_due_date) {
+    createReminderEvent(
+      `Renew Subscription: ${data.service_name}`,
+      data.next_due_date,
+      `Reminder to renew ${data.service_name} (${data.billing_cycle}) for $${data.cost}`
+    );
+  }
+
+  return data;
+};
+
+export const updateSubscription = async (id: string, updates: any) => {
+  const { data, error } = await supabase
+    .from('subscriptions')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  // If next_due_date was updated (renewed), send a new reminder event
+  if (updates.next_due_date && data.next_due_date) {
+    createReminderEvent(
+      `Renew Subscription: ${data.service_name}`,
+      data.next_due_date,
+      `Reminder to renew ${data.service_name} (${data.billing_cycle}) for $${data.cost}`
+    );
+  }
+
+  return data;
+};
+
+// --- Leave Requests API ---
+export const getLeaveRequests = async () => {
+  const { data, error } = await supabase
+    .from('leave_requests')
+    .select('*, employee:profiles!employee_id(name, email)')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data;
+};
+
+export const createLeaveRequest = async (leaveData: any) => {
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) throw new Error('Not authenticated');
+
+  const { data, error } = await supabase
+    .from('leave_requests')
+    .insert([{
+      ...leaveData,
+      employee_id: userData.user.id,
+      status: 'Pending'
+    }])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const updateLeaveRequestStatus = async (id: string, status: string) => {
+  const { data, error } = await supabase
+    .from('leave_requests')
+    .update({ status })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const createReminderEvent = async (title: string, date: string, description: string) => {
+  const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL;
+  if (googleWebhookUrl) {
+    try {
+      fetch(googleWebhookUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        body: JSON.stringify({
+          type: 'calendar_event',
+          title: title,
+          date: date,
+          description: description
+        })
+      }).catch(err => console.error("Event Sync Error:", err));
+    } catch (e) {
+      console.error("Event Sync Error:", e);
+    }
+  }
 };

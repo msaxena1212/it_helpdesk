@@ -7,6 +7,7 @@ import {
   Download, ArrowUpDown, FilterX
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../lib/AuthContext';
 
 const DS = {
   bg: '#0f172a', card: '#131b2e', cardHigh: '#222a3d',
@@ -49,12 +50,18 @@ const EscalationBadge = ({ level }: { level: number }) => {
 
 export const TicketList = () => {
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const [tickets, setTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
 
-  useEffect(() => { fetchTickets(); }, []);
+  useEffect(() => { 
+    if (profile?.role === 'devops') setCategoryFilter('Deployment Request');
+    if (profile?.role === 'inventory_manager') setStatusFilter('Waiting for Inventory');
+    fetchTickets(); 
+  }, [profile]);
 
   const fetchTickets = async () => {
     setLoading(true);
@@ -75,35 +82,44 @@ export const TicketList = () => {
       t.id?.toLowerCase().includes(search.toLowerCase()) ||
       (t.employee?.name || t.guest_name || '')?.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === 'all' || t.status === statusFilter;
-    return matchSearch && matchStatus;
+    const matchCategory = categoryFilter === 'all' || t.issue_type === categoryFilter;
+    
+    // Employee security: Only see own tickets unless admin/manager
+    const isEmployee = profile?.role === 'employee';
+    const matchUser = !isEmployee || t.employee_id === profile?.id;
+
+    return matchSearch && matchStatus && matchCategory && matchUser;
   });
 
   const handleExportExcel = () => {
     const wb = utils.book_new();
     const rows = filtered.map(t => ({
-      "Ticket ID": t.id.substring(0,8).toUpperCase(),
-      "Requester": t.employee?.name || t.guest_name || 'Guest',
-      "Department": t.employee?.department || (t.guest_name ? 'External' : 'Unknown'),
-      "Subject": t.title,
-      "Issue Type": t.issue_type,
-      "Sub Type": t.sub_type || 'General',
-      "Status": t.status,
-      "Priority": t.priority,
-      "Assigned To": t.assigned?.name || 'Unassigned',
-      "Created At": new Date(t.created_at).toLocaleString(),
-      "SLA Deadline": new Date(t.sla_deadline).toLocaleString()
+      'Ticket ID': t.id.substring(0, 8).toUpperCase(),
+      'Requester': t.employee?.name || t.guest_name || 'Guest',
+      'Department': t.department || t.employee?.department || 'General',
+      'Subject': t.title,
+      'Issue Type': t.issue_type || 'Other',
+      'Sub Type': t.sub_type || 'General',
+      'Status': t.status,
+      'Priority': t.priority,
+      'SLA Breached': t.sla_breached ? 'YES' : 'No',
+      'Escalation Level': t.escalation_level || 0,
+      'Assigned To': t.assigned?.name || 'Unassigned',
+      'Created At': new Date(t.created_at).toLocaleString(),
+      'SLA Deadline': t.sla_deadline ? new Date(t.sla_deadline).toLocaleString() : 'N/A',
     }));
 
     const ws = utils.json_to_sheet(rows);
-    utils.book_append_sheet(wb, ws, "Tickets");
+    utils.book_append_sheet(wb, ws, 'Tickets');
 
     const wbout = write(wb, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([wbout], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+    const link = document.createElement('a');
     link.href = url;
     link.download = `ticket_export_${new Date().toISOString().split('T')[0]}.xlsx`;
     link.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -151,6 +167,21 @@ export const TicketList = () => {
                 }}
               >
                 {s}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: '8px', borderLeft: `1px solid ${DS.border}`, paddingLeft: '16px' }}>
+            {['all', 'Hardware', 'Software', 'Deployment Request', 'GitLab Access'].map(c => (
+              <button 
+                key={c} 
+                onClick={() => setCategoryFilter(c)}
+                style={{ 
+                  padding: '10px 16px', borderRadius: '10px', border: 'none', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer',
+                  background: categoryFilter === c ? 'rgba(14,165,233,0.15)' : 'transparent',
+                  color: categoryFilter === c ? DS.primary : DS.muted,
+                }}
+              >
+                {c === 'all' ? 'All Types' : c}
               </button>
             ))}
           </div>

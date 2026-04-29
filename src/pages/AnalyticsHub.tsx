@@ -99,7 +99,7 @@ export const AnalyticsHub = () => {
   };
 
   const getResolutionTrend = () => {
-    if (tickets.length === 0) return { val: '0%', up: true };
+    if (tickets.length === 0) return { val: '—', up: true };
     const now = new Date();
     const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const prev7Days = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
@@ -112,52 +112,105 @@ export const AnalyticsHub = () => {
     return { val: `${diff >= 0 ? '+' : ''}${diff.toFixed(0)}%`, up: diff >= 0 };
   };
 
+  const getSlaTrend = () => {
+    if (tickets.length === 0) return { val: '—', up: true };
+    const now = new Date();
+    const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const prev7Days = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+    const recentTotal = tickets.filter(t => new Date(t.created_at) >= last7Days).length;
+    const recentBreached = tickets.filter(t => t.sla_breached && new Date(t.created_at) >= last7Days).length;
+    const prevTotal = tickets.filter(t => new Date(t.created_at) < last7Days && new Date(t.created_at) >= prev7Days).length;
+    const prevBreached = tickets.filter(t => t.sla_breached && new Date(t.created_at) < last7Days && new Date(t.created_at) >= prev7Days).length;
+    const recentRate = recentTotal > 0 ? (recentBreached / recentTotal) * 100 : 0;
+    const prevRate = prevTotal > 0 ? (prevBreached / prevTotal) * 100 : 0;
+    const diff = recentRate - prevRate;
+    // For SLA breach rate: going DOWN is good, going UP is bad
+    return { val: `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}% vs last wk`, up: diff <= 0 };
+  };
+
   const trend = getResolutionTrend();
+  const slaTrend = getSlaTrend();
   const avgResTime = getAvgResolutionTime();
   const agentStats = getAgentStats();
+  const avgResDisplay = avgResTime === 0 ? 'N/A' : `${avgResTime.toFixed(1)}h`;
 
   const kpis = [
-    { label: 'Total Tickets', value: tickets.length, trend: '+12%', up: true, color: '#89ceff' },
-    { label: 'SLA Breach Rate', value: `${getSlaBreachRate().toFixed(1)}%`, trend: '-2.1%', up: true, color: '#ffb4ab' },
-    { label: 'Avg Resolution', value: `${avgResTime.toFixed(1)}h`, trend: 'Target: 8h', up: avgResTime <= 8, color: DS.success },
-    { label: 'Agent Count', value: agentStats.filter(a => a.name !== 'Unassigned').length, trend: 'Active', up: true, color: '#c084fc' },
+    { label: 'Total Tickets', value: tickets.length, trend: `${tickets.filter(t => new Date(t.created_at) >= new Date(Date.now() - 7*24*60*60*1000)).length} this week`, up: true, color: '#89ceff' },
+    { label: 'SLA Breach Rate', value: `${getSlaBreachRate().toFixed(1)}%`, trend: slaTrend.val, up: slaTrend.up, color: '#ffb4ab' },
+    { label: 'Avg Resolution', value: avgResDisplay, trend: avgResTime > 0 && avgResTime <= 8 ? '✓ On Target' : avgResTime > 8 ? '⚠ Over Target' : 'No data yet', up: avgResTime > 0 && avgResTime <= 8, color: DS.success },
+    { label: 'Active Agents', value: agentStats.filter(a => a.name !== 'Unassigned').length, trend: `${teamCount} total members`, up: true, color: '#c084fc' },
   ];
 
   const handleExportExcel = () => {
     const wb = utils.book_new();
     
-    // Sheet 1: Raw Ticket Data
+    // Sheet 1: Raw Ticket Data (with SLA breach flag)
     const ticketRows = tickets.map(t => ({
-      ID: t.id,
+      ID: t.id.substring(0, 8).toUpperCase(),
       Title: t.title,
-      Department: t.department || t.employee?.department || 'General',
+      Department: t.department || 'General',
       Status: t.status,
       Priority: t.priority,
-      Type: t.issue_type,
-      "SLA Deadline": t.sla_deadline,
-      Created: t.created_at
+      'Issue Type': t.issue_type || 'Other',
+      'SLA Deadline': new Date(t.sla_deadline).toLocaleString(),
+      'SLA Breached': t.sla_breached ? 'YES' : 'No',
+      'Escalation Level': t.escalation_level || 0,
+      'Assigned Agent': t.assigned?.name || 'Unassigned',
+      Created: new Date(t.created_at).toLocaleString(),
     }));
     const wsTickets = utils.json_to_sheet(ticketRows);
-    utils.book_append_sheet(wb, wsTickets, "All Tickets");
+    utils.book_append_sheet(wb, wsTickets, 'All Tickets');
 
     // Sheet 2: Agent Performance
     const agentRows = agentStats.map(a => ({
-      "Agent Name": a.name,
-      "Total Assigned": a.total,
-      "Resolved": a.resolved,
-      "Resolution Rate": `${((a.resolved / a.total) * 100).toFixed(1)}%`,
-      "SLA Breaches": a.breached
+      'Agent Name': a.name,
+      'Total Assigned': a.total,
+      'Resolved': a.resolved,
+      'Resolution Rate': `${((a.resolved / (a.total || 1)) * 100).toFixed(1)}%`,
+      'SLA Breaches': a.breached,
+      'Breach Rate': `${((a.breached / (a.total || 1)) * 100).toFixed(1)}%`,
     }));
     const wsAgents = utils.json_to_sheet(agentRows);
-    utils.book_append_sheet(wb, wsAgents, "Agent Performance");
+    utils.book_append_sheet(wb, wsAgents, 'Agent Performance');
+
+    // Sheet 3: KPI Summary
+    const kpiRows = [
+      ['KPI', 'Value'],
+      ['Total Tickets', tickets.length],
+      ['SLA Breach Rate', `${getSlaBreachRate().toFixed(1)}%`],
+      ['Avg Resolution Time', avgResDisplay],
+      ['Active Agents', agentStats.filter(a => a.name !== 'Unassigned').length],
+      ['Open Tickets', tickets.filter(t => t.status === 'Open').length],
+      ['In Progress', tickets.filter(t => t.status === 'In Progress').length],
+      ['Resolved', tickets.filter(t => t.status === 'Resolved' || t.status === 'Closed').length],
+      ['L1 Escalations', tickets.filter(t => t.escalation_level >= 1).length],
+      ['L2 Escalations', tickets.filter(t => t.escalation_level >= 2).length],
+      ['Report Generated', new Date().toLocaleString()],
+    ];
+    const wsKPIs = utils.aoa_to_sheet(kpiRows);
+    utils.book_append_sheet(wb, wsKPIs, 'KPI Summary');
+
+    // Sheet 4: SLA Breached Tickets
+    const slaRows = tickets.filter(t => t.sla_breached).map(t => ({
+      ID: t.id.substring(0, 8).toUpperCase(),
+      Title: t.title,
+      Priority: t.priority,
+      'Escalation Level': t.escalation_level || 0,
+      'Deadline': new Date(t.sla_deadline).toLocaleString(),
+      'Hours Overdue': `${((Date.now() - new Date(t.sla_deadline).getTime()) / (1000*60*60)).toFixed(1)}h`,
+      Status: t.status,
+    }));
+    const wsSLA = utils.json_to_sheet(slaRows.length > 0 ? slaRows : [{ Note: 'No SLA breaches — great work!' }]);
+    utils.book_append_sheet(wb, wsSLA, 'SLA Breaches');
 
     const wbout = write(wb, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([wbout], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+    const link = document.createElement('a');
     link.href = url;
     link.download = `analytics_report_${new Date().toISOString().split('T')[0]}.xlsx`;
     link.click();
+    URL.revokeObjectURL(url);
   };
 
   const statusCounts = {

@@ -26,10 +26,16 @@ function doPost(e) {
       console.log("Routing to Tickets sheet...");
       const sheet = ss.getSheetByName("Tickets") || ss.getSheets()[0];
 
+      const ticketId = payload.id || "";
+      const isAnonymousGrievance = (payload.sub_type === 'Grievance' && payload.custom_fields && payload.custom_fields.anonymous);
+      
+      const requesterName = isAnonymousGrievance ? "ANONYMOUS" : (payload.name || "N/A");
+      const requesterEmail = isAnonymousGrievance ? "HIDDEN" : (payload.email || "N/A");
+
       const newRow = [
         new Date(),
-        payload.name || "N/A",
-        payload.email || "N/A",
+        requesterName,
+        requesterEmail,
         payload.department || "General",
         payload.title || "Untitled Issue",
         payload.description || "No description",
@@ -39,15 +45,62 @@ function doPost(e) {
         payload.issue_start_date || "",
         payload.frequency || "One-Time",
         payload.attachment || "",
-        "", // Column 13
-        payload.sub_type || "General"
+        "Open", // Default Status
+        payload.sub_type || "General",
+        ticketId
       ];
-      sheet.appendRow(newRow);
 
-      // Detailed Email Notification for Software Tickets
-      sendDetailedEmail("IT Helpdesk CRM Software", payload);
+      // DEDUPLICATION: Check if Ticket ID already exists
+      const idColumn = 15;
+      const data = sheet.getDataRange().getValues();
+      let foundRow = -1;
+      for (let i = 1; i < data.length; i++) {
+        if (data[i][idColumn - 1] === ticketId && ticketId !== "") {
+          foundRow = i + 1;
+          break;
+        }
+      }
+
+      if (foundRow > -1) {
+        // Update existing row instead of appending
+        sheet.getRange(foundRow, 1, 1, newRow.length).setValues([newRow]);
+      } else {
+        sheet.appendRow(newRow);
+      }
+
+      // Detailed Email Notification
+      sendDetailedEmail("IT Helpdesk CRM", payload);
 
       return successResponse("Ticket synchronized to Google Sheet");
+    }
+
+    // ROUTE 6: UPDATE TICKET (From CRM to Sheet)
+    if (payload.type === 'update') {
+      const ticketId = payload.id;
+      if (!ticketId) return errorResponse("Missing Ticket ID for update");
+
+      const data = sheet.getDataRange().getValues();
+      const idColumn = 15;
+      let foundRow = -1;
+      for (let i = 1; i < data.length; i++) {
+        if (data[i][idColumn - 1] === ticketId) {
+          foundRow = i + 1;
+          break;
+        }
+      }
+
+      if (foundRow > -1) {
+        if (payload.status) {
+          sheet.getRange(foundRow, 13).setValue(payload.status);
+        }
+        if (payload.assigned_to_name) {
+          // If we want to store assigned admin, we need a column.
+          // Let's add it to Column 16 if not exists.
+          sheet.getRange(foundRow, 16).setValue(payload.assigned_to_name);
+        }
+        return successResponse("Ticket updated in Google Sheet");
+      }
+      return errorResponse("Ticket ID not found in sheet");
     }
 
     // ROUTE 2: ASSET AUDIT SYNCHRONIZATION
@@ -82,8 +135,39 @@ function doPost(e) {
       return successResponse("L2 Escalation notification sent");
     }
 
+    // ROUTE 5: CALENDAR EVENT REMINDERS
+    if (payload.type === 'calendar_event' || payload.type === 'subscription_reminder') {
+      return createCalendarEvent(payload);
+    }
+
   } catch (error) {
     return errorResponse(error.toString());
+  }
+}
+
+/**
+ * Creates an event in the user's primary Google Calendar
+ */
+function createCalendarEvent(data) {
+  try {
+    const calendar = CalendarApp.getDefaultCalendar();
+    const startTime = new Date(data.date);
+    
+    // Default to 1-hour event if no end time
+    const endTime = new Date(startTime.getTime() + (60 * 60 * 1000)); 
+    
+    const event = calendar.createEvent(
+      data.title,
+      startTime,
+      endTime,
+      { description: data.description || "System generated reminder from Zyno CRM." }
+    );
+    
+    console.log("Calendar event created: " + event.getId());
+    return successResponse("Calendar reminder created successfully");
+  } catch (e) {
+    console.error("Calendar Error:", e.toString());
+    return errorResponse("Failed to create calendar event: " + e.toString());
   }
 }
 
@@ -172,11 +256,29 @@ function sendDetailedEmail(source, data) {
     ? (data.is_blocked ? "Yes" : "No")
     : (data.is_blocked && data.is_blocked.toString().toLowerCase().includes('yes') ? "Yes" : "No");
 
-  const body = "A new ticket has been raised via the " + source + ".\n\n" +
-               "User: " + (data.name || "N/A") + " (" + (data.email || "N/A") + ")\n" +
+  const subType = data.sub_type || "General";
+  let subject = "[New Ticket] " + data.priority + " Priority: " + data.title;
+  let intro = "A new ticket has been raised via the " + source + ".\n\n";
+  let requesterName = data.name || "N/A";
+  let requesterEmail = data.email || "N/A";
+
+  // Specialized Logic for Grievance (Confidentiality)
+  if (subType === 'Grievance') {
+    subject = "🚨 [CONFIDENTIAL GRIEVANCE] Urgent Attention Required";
+    intro = "SECURITY ALERT: A confidential grievance has been submitted.\n\n";
+    if (data.custom_fields && data.custom_fields.anonymous) {
+      requesterName = "ANONYMOUS";
+      requesterEmail = "HIDDEN";
+    }
+  } else if (subType === 'Payslip') {
+    subject = "💰 [PAYROLL REQUEST] Monthly Payslip Generation";
+  }
+
+  const body = intro +
+               "User: " + requesterName + " (" + requesterEmail + ")\n" +
                "Department: " + (data.department || "N/A") + "\n\n" +
                "Issue: " + (data.title || "Untitled Issue") + "\n" +
-               "Type: " + (data.issue_type || "Other") + " (" + (data.sub_type || "General") + ")\n" +
+               "Type: " + (data.issue_type || "Other") + " (" + subType + ")\n" +
                "Priority: " + (data.priority || "Medium") + "\n" +
                "Blocked: " + isBlockedText + "\n" +
                "Frequency: " + (data.frequency || "One-Time") + "\n" +
@@ -185,7 +287,7 @@ function sendDetailedEmail(source, data) {
                "Description: " + (data.description || "No description provided") + "\n\n" +
                "Please log in to the CRM to assign and resolve this ticket.";
 
-  MailApp.sendEmail(ADMIN_EMAIL, "[New Ticket] " + data.priority + " Priority: " + data.title, body);
+  MailApp.sendEmail(ADMIN_EMAIL, subject, body);
 }
 
 function successResponse(msg) {
@@ -292,6 +394,66 @@ function pushToSupabase(email, name, department, title, description, issueType, 
     method: "post",
     headers: headers,
     payload: JSON.stringify(ticketData),
-    muteHttpExceptions: true
   });
+}
+
+/**
+ * 3. SYNC FROM SHEET TO SUPABASE (2-Way Sync)
+ * This runs when a cell in the spreadsheet is edited.
+ */
+function onEdit(e) {
+  const range = e.range;
+  const sheet = range.getSheet();
+  const row = range.getRow();
+  const col = range.getColumn();
+
+  // We only care about the "Tickets" sheet and Column 13 (Status)
+  if (sheet.getName() === "Tickets" && col === 13 && row > 1) {
+    const newStatus = range.getValue();
+    const id = sheet.getRange(row, 15).getValue(); // Col 15 is where Ticket ID is stored
+    
+    if (id) {
+      updateSupabaseStatus(id, newStatus);
+      
+      // If status is Resolved, send email to user
+      if (newStatus === "Resolved") {
+        const userEmail = sheet.getRange(row, 3).getValue();
+        const ticketTitle = sheet.getRange(row, 5).getValue();
+        sendResolutionEmail(userEmail, ticketTitle, id);
+      }
+    }
+  }
+}
+
+function updateSupabaseStatus(id, status) {
+  const url = SUPABASE_URL + "/rest/v1/tickets?id=eq." + id;
+  const headers = {
+    "apikey": SUPABASE_ANON_KEY,
+    "Authorization": "Bearer " + SUPABASE_ANON_KEY,
+    "Content-Type": "application/json",
+    "Prefer": "return=minimal"
+  };
+  
+  const payload = JSON.stringify({ status: status });
+  const options = {
+    method: "patch",
+    headers: headers,
+    payload: payload,
+    muteHttpExceptions: true
+  };
+  
+  UrlFetchApp.fetch(url, options);
+}
+
+function sendResolutionEmail(email, title, id) {
+  const subject = "✅ Ticket Resolved: " + title;
+  const body = "Great news! Your ticket has been marked as RESOLVED.\n\n" +
+               "Ticket ID: #" + id.substring(0, 8) + "\n" +
+               "Title: " + title + "\n\n" +
+               "If you are still facing issues, please reply to this email or raise a new ticket in the ESS portal.\n\n" +
+               "Best regards,\nBuildFlow IT Support Team";
+  
+  if (email && email !== "N/A") {
+    MailApp.sendEmail(email, subject, body);
+  }
 }

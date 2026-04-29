@@ -14,7 +14,7 @@ const DS = {
   text: '#dae2fd', muted: '#88929b', surface: '#0b1326',
 };
 
-const categories = ['Hardware', 'Software', 'Network', 'Access / Login', 'Other'];
+const categories = ['Hardware', 'Software', 'Network', 'Access / Login', 'Deployment Request', 'GitLab Access', 'Other'];
 const departmentsList = ['Engineering', 'Product', 'HR', 'Sales', 'Marketing', 'Finance', 'Other'];
 const priorities = [
   { label: 'Low', color: '#4ade80', bg: 'rgba(74,222,128,0.12)' },
@@ -58,6 +58,13 @@ export const CreateTicket = () => {
     is_blocked: 'No',
     issue_start_date: '',
     frequency: '',
+    target_environment: 'Staging',
+    branch_tag_name: '',
+    release_notes: '',
+    rollback_plan: '',
+    gitlab_repo_url: '',
+    requested_role: 'Developer',
+    justification: ''
   });
 
   useEffect(() => {
@@ -119,6 +126,16 @@ export const CreateTicket = () => {
         department: formData.department,
         guest_name: formData.employee_id ? undefined : formData.name,
         guest_email: formData.employee_id ? undefined : formData.email,
+        custom_fields: formData.category === 'Deployment Request' ? {
+          target_environment: formData.target_environment,
+          branch_tag_name: formData.branch_tag_name,
+          release_notes: formData.release_notes,
+          rollback_plan: formData.rollback_plan
+        } : formData.category === 'GitLab Access' ? {
+          gitlab_repo_url: formData.gitlab_repo_url,
+          requested_role: formData.requested_role,
+          justification: formData.justification
+        } : {}
       });
       setSuccess(true);
       setTimeout(() => navigate('/'), 2000);
@@ -248,6 +265,51 @@ export const CreateTicket = () => {
                 onBlur={e => (e.target.style.borderColor = DS.border)}
               />
             </div>
+
+            {formData.category === 'Deployment Request' && (
+              <>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <div style={{ flex: 1 }}>
+                    <FieldLabel required>Target Environment</FieldLabel>
+                    <select value={formData.target_environment} onChange={e => setFormData({ ...formData, target_environment: e.target.value })} style={inputStyle}>
+                      <option>Staging</option><option>Production</option>
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <FieldLabel required>Branch / Tag Name</FieldLabel>
+                    <input type="text" value={formData.branch_tag_name} onChange={e => setFormData({ ...formData, branch_tag_name: e.target.value })} placeholder="e.g. main, v1.2" style={inputStyle} />
+                  </div>
+                </div>
+                <div>
+                  <FieldLabel required>Release Notes</FieldLabel>
+                  <textarea rows={2} value={formData.release_notes} onChange={e => setFormData({ ...formData, release_notes: e.target.value })} placeholder="What features/fixes are in this release?" style={{ ...inputStyle, resize: 'vertical' }} />
+                </div>
+                <div>
+                  <FieldLabel required>Rollback Plan</FieldLabel>
+                  <textarea rows={2} value={formData.rollback_plan} onChange={e => setFormData({ ...formData, rollback_plan: e.target.value })} placeholder="Steps to revert if deployment fails" style={{ ...inputStyle, resize: 'vertical' }} />
+                </div>
+              </>
+            )}
+
+            {formData.category === 'GitLab Access' && (
+              <>
+                <div>
+                  <FieldLabel required>GitLab Repo URL</FieldLabel>
+                  <input type="text" value={formData.gitlab_repo_url} onChange={e => setFormData({ ...formData, gitlab_repo_url: e.target.value })} placeholder="https://gitlab.com/org/repo" style={inputStyle} />
+                </div>
+                <div>
+                  <FieldLabel required>Requested Role</FieldLabel>
+                  <select value={formData.requested_role} onChange={e => setFormData({ ...formData, requested_role: e.target.value })} style={inputStyle}>
+                    <option>Guest</option><option>Reporter</option><option>Developer</option><option>Maintainer</option>
+                  </select>
+                </div>
+                <div>
+                  <FieldLabel required>Justification</FieldLabel>
+                  <textarea rows={2} value={formData.justification} onChange={e => setFormData({ ...formData, justification: e.target.value })} placeholder="Why do you need access?" style={{ ...inputStyle, resize: 'vertical' }} />
+                </div>
+              </>
+            )}
+
             <div>
               <FieldLabel required>Frequency of Issue</FieldLabel>
               <div style={{ display: 'flex', gap: '8px' }}>

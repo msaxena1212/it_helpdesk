@@ -1,6 +1,8 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
+import { ResetPassword } from './pages/ResetPassword';
 import { EmployeeDashboard } from './pages/EmployeeDashboard';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { TicketList } from './pages/TicketList';
@@ -14,9 +16,13 @@ import { TicketKanban } from './pages/TicketKanban';
 import { CreateTicket } from './pages/CreateTicket';
 import { TicketDetail } from './pages/TicketDetail';
 import { Assets } from './pages/Assets';
+import { InventoryDashboard } from './pages/InventoryDashboard';
+import { DevOpsDashboard } from './pages/DevOpsDashboard';
+import { SubscriptionsHub } from './pages/SubscriptionsHub';
 import './index.css';
 
 import { AuthProvider, useAuth } from './lib/AuthContext';
+import { checkSLABreaches } from './lib/api';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
@@ -33,20 +39,40 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 function AppRoutes() {
-  const { user } = useAuth();
-  const userRole = user?.user_metadata?.role || 'employee'; // fallback to employee
+  const { user, profile } = useAuth();
+  const userRole = (user?.email === 'superadmin@elitemindz.co') ? 'superadmin' : (profile?.role || 'employee');
+
+  // USP #2: SLA Escalation Engine — polls every 5 minutes when authenticated
+  useEffect(() => {
+    if (!user) return;
+
+    const runCheck = async () => {
+      try {
+        await checkSLABreaches();
+      } catch (e) {
+        console.warn('SLA check error (non-blocking):', e);
+      }
+    };
+
+    runCheck(); // Run immediately on login
+    const interval = setInterval(runCheck, 5 * 60 * 1000); // Then every 5 minutes
+    return () => clearInterval(interval);
+  }, [user]);
 
   const renderDashboard = () => {
     switch (userRole) {
-      case 'superadmin': 
+      case 'superadmin': return <AdminDashboard />;
       case 'admin': return <AdminDashboard />;
+      case 'inventory_manager': return <InventoryDashboard />;
+      case 'devops': return <DevOpsDashboard />;
       default: return <EmployeeDashboard />;
     }
   };
 
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
+      <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="/" element={renderDashboard()} />
@@ -62,6 +88,8 @@ function AppRoutes() {
         <Route path="/create-ticket" element={<CreateTicket />} />
         <Route path="/tickets/new" element={<CreateTicket />} />
         <Route path="/tickets/:id" element={<TicketDetail />} />
+        <Route path="/inventory" element={<InventoryDashboard />} />
+        <Route path="/subscriptions" element={<SubscriptionsHub />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -12,6 +12,9 @@ import {
   Users,
   History,
   ClipboardCheck,
+  Package,
+  CalendarCheck,
+  DollarSign
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 
@@ -56,16 +59,22 @@ const NavItem = ({ link }: { link: any }) => (
 );
 
 export const Sidebar = () => {
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
-  const role = user?.user_metadata?.role || 'employee';
+  const role = profile?.role || 'employee';
+
+  const isSuper = role === 'superadmin' || user?.email === 'superadmin@elitemindz.co';
 
   const mainLinks = [
-    { name: 'Dashboard', path: '/', icon: LayoutDashboard },
+    { name: role === 'employee' ? 'ESS Portal' : (isSuper ? 'Master Console' : (role === 'devops' ? 'DevOps Control' : 'Dashboard')), path: '/', icon: LayoutDashboard },
     { name: 'Tickets', path: '/tickets', icon: Ticket },
     { name: 'Kanban', path: '/kanban', icon: Columns3 },
     { name: 'Analytics', path: '/analytics', icon: BarChart3 },
+    ...(isSuper || role === 'admin' ? [{ name: 'Subscriptions', path: '/subscriptions', icon: DollarSign }] : []),
+    ...(isSuper || role === 'inventory_manager' ? [{ name: 'Inventory Requests', path: '/inventory', icon: Package }] : []),
+    ...(isSuper || role === 'devops' ? [{ name: 'GitLab & Deploy', path: '/tickets', icon: Monitor }] : []),
   ];
+
 
   const assetLinks = [
     { name: 'Assets Inventory', path: '/assets', icon: Monitor },
@@ -74,7 +83,7 @@ export const Sidebar = () => {
   ];
 
   const systemLinks = [
-    ...(role === 'superadmin' ? [{ name: 'Team Management', path: '/admin', icon: Users }] : []),
+    ...(isSuper || role === 'admin' ? [{ name: 'Team Management', path: '/admin', icon: Users }] : []),
     { name: 'Settings', path: '/settings', icon: Settings },
   ];
 
@@ -149,7 +158,7 @@ export const Sidebar = () => {
               {user?.email?.split('@')[0] || 'User'}
             </p>
             <p style={{ color: '#88929b', fontSize: '0.7rem', margin: 0, textTransform: 'capitalize' }}>
-              {role}
+              {isSuper ? 'superadmin' : role}
             </p>
           </div>
         </div>

@@ -114,6 +114,51 @@ export const AdminDashboard = () => {
     <div style={{ minHeight: '100vh', background: DS.bg, padding: '32px', fontFamily: "'Inter', sans-serif" }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
 
+        {/* Contextual Awareness: High Priority Alerts & Workload */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '24px', marginBottom: '32px' }}>
+          <div style={{ background: 'rgba(255,68,68,0.05)', borderRadius: '24px', padding: '24px', border: '1px solid rgba(255,68,68,0.1)' }}>
+            <h3 style={{ fontSize: '0.875rem', fontWeight: 800, color: '#ff4444', textTransform: 'uppercase', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Shield size={18} /> High Priority Breach Risk
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {tickets.filter(t => t.priority === 'Critical' && !['Resolved', 'Closed'].includes(t.status)).slice(0, 2).map(t => (
+                <div key={t.id} onClick={() => navigate(`/tickets/${t.id}`)} style={{ background: DS.surface, padding: '12px 16px', borderRadius: '12px', cursor: 'pointer', border: `1px solid ${DS.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <p style={{ fontSize: '0.9rem', fontWeight: 700, color: DS.text }}>{t.title}</p>
+                    <p style={{ fontSize: '0.75rem', color: DS.muted }}>SLA Deadline: {new Date(t.sla_deadline).toLocaleString()}</p>
+                  </div>
+                  <ChevronRight size={16} color={DS.muted} />
+                </div>
+              ))}
+              {tickets.filter(t => t.priority === 'Critical' && !['Resolved', 'Closed'].includes(t.status)).length === 0 && (
+                <p style={{ fontSize: '0.85rem', color: DS.muted, fontStyle: 'italic' }}>No critical tickets at risk currently.</p>
+              )}
+            </div>
+          </div>
+
+          <div style={{ background: DS.card, borderRadius: '24px', padding: '24px', border: `1px solid ${DS.border}` }}>
+            <h3 style={{ fontSize: '0.875rem', fontWeight: 800, color: DS.text, textTransform: 'uppercase', marginBottom: '16px' }}>Team Workload</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.85rem', color: DS.muted }}>Unassigned Pool</span>
+                <span style={{ background: 'rgba(14,165,233,0.1)', color: DS.primary, padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 800 }}>
+                  {tickets.filter(t => !t.assigned_to && t.status === 'Open').length}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.85rem', color: DS.muted }}>Active In-Progress</span>
+                <span style={{ background: 'rgba(255,184,110,0.1)', color: '#ffb86e', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 800 }}>
+                  {tickets.filter(t => t.status === 'In Progress').length}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.85rem', color: DS.muted }}>Resolution Velocity</span>
+                <span style={{ color: '#4ade80', fontSize: '0.85rem', fontWeight: 700 }}>High</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -16 }}

@@ -3,11 +3,16 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, ChevronDown, Clock, ShieldAlert, User, Mail, Building2, 
   Activity, CheckSquare, AlertCircle, Loader2, Calendar, Tag as TagIcon,
-  CheckCircle2, History, UserPlus, X, Upload, MessageSquare, Camera
+  CheckCircle2, History, UserPlus, X, Upload, MessageSquare, Camera,
+  ShoppingCart, Truck, Package, Tag
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
-import { updateStatus, assignTicket, getAllUsers, VALID_TRANSITIONS, getActivityLogs, addComment } from '../lib/api';
+import { 
+  updateStatus, assignTicket, getAllUsers, VALID_TRANSITIONS, 
+  getActivityLogs, addComment, requestInventory, updateProcurementStatus 
+} from '../lib/api';
+import { useAuth } from '../lib/AuthContext';
 import { format } from 'date-fns';
 
 const DS = {
@@ -25,6 +30,13 @@ export const TicketDetail = () => {
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<any[]>([]);
   const [updating, setUpdating] = useState(false);
+  const { profile } = useAuth();
+  const userRole = profile?.role || 'employee';
+
+  // Inventory Request Modal State
+  const [showInvModal, setShowInvModal] = useState(false);
+  const [invManagerId, setInvManagerId] = useState('');
+  const [invRemarks, setInvRemarks] = useState('');
 
   // Status Change Modal State
   const [showResModal, setShowResModal] = useState(false);
@@ -74,12 +86,43 @@ export const TicketDetail = () => {
   };
 
   const handleStatusUpdate = (newStatus: string) => {
+    if (newStatus === 'Waiting for Inventory') {
+      setShowInvModal(true);
+      return;
+    }
     const restricted = ['Waiting for User', 'Resolved', 'Closed'];
     if (restricted.includes(newStatus)) {
       setPendingStatus(newStatus);
       setShowResModal(true);
     } else {
       executeStatusUpdate(newStatus);
+    }
+  };
+
+  const handleRequestInventory = async () => {
+    if (!invManagerId || !invRemarks) return;
+    setUpdating(true);
+    try {
+      await requestInventory(ticket.id, invManagerId, invRemarks);
+      setShowInvModal(false);
+      setInvRemarks('');
+      await Promise.all([fetchTicket(), fetchLogs()]);
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleProcurementAction = async (nextStatus: string) => {
+    setUpdating(true);
+    try {
+      await updateProcurementStatus(ticket.id, nextStatus);
+      await Promise.all([fetchTicket(), fetchLogs()]);
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -129,7 +172,9 @@ export const TicketDetail = () => {
   );
 
   const availableTransitions = VALID_TRANSITIONS[ticket.status] || [];
-  const isSlaBreached = new Date(ticket.sla_deadline) < new Date() && ticket.status !== 'Resolved' && ticket.status !== 'Closed';
+  const isSlaBreached = ticket.sla_deadline 
+    ? new Date(ticket.sla_deadline) < new Date() && ticket.status !== 'Resolved' && ticket.status !== 'Closed'
+    : false;
 
   return (
     <div style={{ minHeight: '100vh', background: DS.bg, color: DS.text, fontFamily: "'Inter', sans-serif" }}>
@@ -165,14 +210,13 @@ export const TicketDetail = () => {
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <p style={{ fontSize: '0.7rem', fontWeight: 700, color: DS.muted, textTransform: 'uppercase', marginBottom: '4px' }}>Submitted On</p>
-                <p style={{ fontSize: '0.85rem', fontWeight: 600 }}>{format(new Date(ticket.created_at), 'PPP p')}</p>
+                <p style={{ fontSize: '0.85rem', fontWeight: 600 }}>{ticket.created_at ? format(new Date(ticket.created_at), 'PPP p') : 'N/A'}</p>
               </div>
             </div>
 
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '16px', padding: '24px', marginBottom: '32px', border: `1px solid ${DS.border}` }}>
               <h4 style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.primary, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>Issue Description</h4>
-              <p style={{ fontSize: '0.95rem', lineHeight: 1.7, color: DS.text }}>{ticket.description}</p>
+              <p style={{ fontSize: '0.95rem', lineHeight: 1.7, color: DS.text }}>{ticket.description || 'No description provided'}</p>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
@@ -195,37 +239,92 @@ export const TicketDetail = () => {
                 </div>
               </div>
             </div>
+
+            {ticket.custom_fields && Object.keys(ticket.custom_fields).length > 0 && (
+              <div style={{ marginTop: '24px', background: 'rgba(0,0,0,0.2)', borderRadius: '16px', padding: '24px', border: `1px solid ${DS.border}` }}>
+                <h4 style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.primary, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '16px' }}>Request Details</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+                  {Object.entries(ticket.custom_fields).map(([key, value]) => (
+                    <div key={key}>
+                      <span style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, color: DS.muted, textTransform: 'uppercase', marginBottom: '4px' }}>
+                        {key.replace(/_/g, ' ')}
+                      </span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: DS.text }}>
+                        {String(value) || '—'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Activity Log */}
+          {/* Procurement Workflow UI */}
+          {ticket.status === 'Waiting for Inventory' && (
+            <div style={{ background: DS.card, borderRadius: '24px', border: `1px solid ${DS.border}`, padding: '32px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+                <h4 style={{ fontSize: '1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <ShoppingCart size={20} color={DS.primary} /> Procurement Lifecycle
+                </h4>
+                <div style={{ padding: '6px 12px', borderRadius: '8px', background: 'rgba(14,165,233,0.1)', color: DS.primary, fontSize: '0.75rem', fontWeight: 700 }}>
+                  Current: {ticket.procurement_status || 'Requested'}
+                </div>
+              </div>
+
+              <div style={{ position: 'relative' }}>
+                <div style={{ position: 'absolute', top: 0, bottom: 0, left: '20px', width: '2px', background: DS.border }} />
+                {[
+                  { step: 'Requested', icon: Clock, desc: 'Inventory requested and waiting for manager review' },
+                  { step: 'Procuring', icon: ShoppingCart, desc: 'Items are currently being procured from suppliers' },
+                  { step: 'Handover Pending', icon: Truck, desc: 'Items received, waiting for physical handover' }
+                ].map((phase, idx) => {
+                  const statuses = ['Requested', 'Procuring', 'Handover Pending'];
+                  const currentIdx = statuses.indexOf(ticket.procurement_status || 'Requested');
+                  const isPast = idx < currentIdx;
+                  const isCurrent = idx === currentIdx;
+                  
+                  return (
+                    <div key={phase.step} style={{ display: 'flex', gap: '20px', marginBottom: idx === 2 ? 0 : '32px', position: 'relative', opacity: isPast || isCurrent ? 1 : 0.4 }}>
+                      <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: isCurrent ? DS.primary : isPast ? DS.success : DS.surface, border: `2px solid ${isCurrent ? DS.primary : isPast ? DS.success : DS.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}>
+                        <phase.icon size={18} color={isCurrent || isPast ? '#fff' : DS.muted} />
+                      </div>
+                      <div style={{ paddingTop: '8px' }}>
+                        <h5 style={{ fontSize: '0.95rem', fontWeight: 700, color: isCurrent ? DS.primary : isPast ? DS.success : DS.text, marginBottom: '4px' }}>{phase.step}</h5>
+                        <p style={{ fontSize: '0.8rem', color: DS.muted }}>{phase.desc}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {profile?.role === 'inventory_manager' && ticket.procurement_status !== 'Handover Pending' && (
+                <button
+                  onClick={() => handleProcurementAction(ticket.procurement_status === 'Requested' ? 'Procuring' : 'Handover Pending')}
+                  style={{ width: '100%', padding: '16px', borderRadius: '12px', background: DS.primary, border: 'none', color: '#fff', fontWeight: 800, marginTop: '32px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
+                >
+                  <ShoppingCart size={18} /> Move to {ticket.procurement_status === 'Requested' ? 'Procuring' : 'Handover Pending'}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Activity Timeline */}
           <div style={{ background: DS.card, borderRadius: '24px', border: `1px solid ${DS.border}`, padding: '32px' }}>
-            <h4 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h4 style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '1rem', fontWeight: 700, marginBottom: '24px' }}>
               <History size={20} color={DS.primary} /> Activity Timeline
             </h4>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', position: 'relative' }}>
-              {logs.length > 1 && <div style={{ position: 'absolute', left: '11px', top: '24px', bottom: '24px', width: '2px', background: DS.border }} />}
-              
-              {logs.map((log, i) => {
-                const isStatus = log.action.includes('Status');
-                const isAssign = log.action.includes('Assign');
-                const isCreate = log.action.includes('created');
-                
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {logs.map(log => {
+                const isSystem = log.performer?.name === 'System';
                 return (
-                  <div key={log.id} style={{ display: 'flex', gap: '20px', position: 'relative', zIndex: 1 }}>
-                    <div style={{ 
-                      width: '24px', height: '24px', borderRadius: '50%', 
-                      background: isCreate ? DS.success : isStatus ? DS.primary : isAssign ? DS.warning : DS.muted, 
-                      border: `4px solid ${DS.card}`, display: 'flex', alignItems: 'center', justifyContent: 'center' 
-                    }}>
-                      {isCreate ? <CheckSquare size={10} color="#fff" /> : 
-                       isStatus ? <Activity size={10} color="#fff" /> :
-                       isAssign ? <UserPlus size={10} color="#fff" /> :
-                       <History size={10} color="#fff" />}
+                  <div key={log.id} style={{ display: 'flex', gap: '16px' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '12px', background: isSystem ? 'rgba(14,165,233,0.1)' : DS.surface, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${DS.border}` }}>
+                      {isSystem ? <History size={16} color={DS.primary} /> : <div style={{ fontSize: '0.8rem', fontWeight: 800 }}>{(log.performer?.name || 'U')[0]}</div>}
                     </div>
-                    <div>
-                      <p style={{ fontSize: '0.85rem', fontWeight: 700 }}>{log.action}</p>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '0.75rem', color: DS.muted }}>{format(new Date(log.created_at), 'PPP p')}</span>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: '0.9rem', marginBottom: '4px' }}>{log.action}</p>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.75rem', color: DS.muted }}>{log.created_at ? format(new Date(log.created_at), 'PPP p') : 'N/A'}</span>
                         <span style={{ fontSize: '0.7rem', color: DS.primary, fontWeight: 700 }}>• {log.performer?.name || 'System'}</span>
                       </div>
                     </div>
@@ -292,7 +391,7 @@ export const TicketDetail = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
                 <span style={{ color: DS.muted }}>Resolution Target:</span>
-                <span style={{ fontWeight: 700 }}>{format(new Date(ticket.sla_deadline), 'MMM d, h:mm a')}</span>
+                <span style={{ fontWeight: 700 }}>{ticket.sla_deadline ? format(new Date(ticket.sla_deadline), 'MMM d, h:mm a') : 'N/A'}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
                 <span style={{ color: DS.muted }}>Priority:</span>
@@ -387,6 +486,60 @@ export const TicketDetail = () => {
                 >
                   {updating ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
                   Confirm Status Update
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Inventory Request Modal */}
+      <AnimatePresence>
+        {showInvModal && (
+          <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '20px' }}>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowInvModal(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }} />
+            <motion.div initial={{ scale: 0.95, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 20 }} style={{ position: 'relative', width: '100%', maxWidth: '500px', background: DS.card, borderRadius: '28px', border: `1px solid ${DS.border}`, padding: '32px', boxShadow: '0 24px 64px rgba(0,0,0,0.6)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <Package size={24} color={DS.primary} /> Request Inventory
+                </h2>
+                <button onClick={() => setShowInvModal(false)} style={{ background: 'none', border: 'none', color: DS.muted, cursor: 'pointer' }}><X size={20} /></button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase' }}>Select Inventory Manager</label>
+                  <select 
+                    value={invManagerId} 
+                    onChange={e => setInvManagerId(e.target.value)}
+                    style={{ width: '100%', padding: '12px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.85rem' }}
+                  >
+                    <option value="">Choose a manager...</option>
+                    {users.filter(u => u.role === 'inventory_manager' || u.role === 'superadmin').map(u => (
+                      <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase' }}>Part Details & Remarks</label>
+                  <textarea 
+                    value={invRemarks} 
+                    onChange={e => setInvRemarks(e.target.value)}
+                    placeholder="Describe the component or part needed..."
+                    style={{ width: '100%', height: '100px', padding: '12px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.85rem', resize: 'none' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '32px' }}>
+                <button onClick={() => setShowInvModal(false)} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: 'transparent', border: `1px solid ${DS.border}`, color: DS.text, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+                <button 
+                  disabled={!invManagerId || !invRemarks || updating}
+                  onClick={handleRequestInventory}
+                  style={{ flex: 2, padding: '12px', borderRadius: '12px', background: DS.primary, border: 'none', color: '#fff', fontWeight: 800, cursor: 'pointer' }}
+                >
+                  Send Request
                 </button>
               </div>
             </motion.div>

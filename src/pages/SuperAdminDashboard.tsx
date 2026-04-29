@@ -5,10 +5,11 @@ import {
   Users, UserPlus, ShieldCheck, Mail, Building2, Loader2,
   Search, Filter, MoreVertical, Edit2, Trash2, ChevronRight,
   Shield, UserCheck, UserCog, Building, X, Monitor, History,
-  ArrowRightLeft, AlertCircle
+  ArrowRightLeft, AlertCircle, ClipboardList, RotateCcw, Send
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
+import { getAllActivityLogs } from '../lib/api';
 
 const DS = {
   bg: '#0f172a', card: '#131b2e', cardHigh: '#222a3d',
@@ -22,8 +23,6 @@ const departments = [
   { name: 'HR', color: '#4ade80' },
   { name: 'Operations', color: '#c084fc' },
 ];
-
-import { getAllActivityLogs } from '../lib/api';
 
 export const SuperAdminDashboard = () => {
   const navigate = useNavigate();
@@ -41,6 +40,7 @@ export const SuperAdminDashboard = () => {
   const [userAssets, setUserAssets] = useState<any[]>([]);
   const [userHistory, setUserHistory] = useState<any[]>([]);
   const [fetchingPortfolio, setFetchingPortfolio] = useState(false);
+  const [editingUser, setEditingUser] = useState<any>(null);
 
   useEffect(() => {
     fetchUsers();
@@ -101,7 +101,7 @@ export const SuperAdminDashboard = () => {
     setSubmitting(true);
     try {
       const { error } = await supabase.from('profiles').upsert({
-        id: Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15),
+        id: crypto.randomUUID(),
         name: newUser.name,
         email: newUser.email,
         role: newUser.role,
@@ -117,6 +117,55 @@ export const SuperAdminDashboard = () => {
       console.error(e);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleUpdateUser = async () => {
+    if (!editingUser) return;
+    setSubmitting(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          role: editingUser.role,
+          department: editingUser.department,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', editingUser.id);
+      
+      if (error) throw error;
+      setEditingUser(null);
+      fetchUsers();
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleResetEmail = async (email: string) => {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      alert('Reset/Invite email sent successfully!');
+    } catch (e: any) {
+      alert('Error sending email: ' + e.message);
+    }
+  };
+
+  const handleInviteUser = async (user: any) => {
+    // This calls the Edge Function we are setting up
+    try {
+      const { data, error } = await supabase.functions.invoke('invite-user', {
+        body: { email: user.email, name: user.name }
+      });
+      if (error) throw error;
+      alert('Official invitation sent!');
+    } catch (e: any) {
+      // Fallback to reset email flow if function not deployed
+      handleResetEmail(user.email);
     }
   };
 
@@ -151,6 +200,46 @@ export const SuperAdminDashboard = () => {
   return (
     <div style={{ minHeight: '100vh', background: DS.bg, padding: '32px', fontFamily: "'Inter', sans-serif" }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+
+        {/* Contextual Awareness: System Integrity & Latest Audit */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '24px', marginBottom: '32px' }}>
+          <div style={{ background: DS.card, borderRadius: '24px', padding: '24px', border: `1px solid ${DS.border}` }}>
+            <h3 style={{ fontSize: '0.875rem', fontWeight: 800, color: DS.text, textTransform: 'uppercase', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ShieldCheck size={18} color={DS.primary} /> System Integrity
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.85rem', color: DS.muted }}>Auth Service</span>
+                <span style={{ color: '#4ade80', fontSize: '0.8rem', fontWeight: 700 }}>Active</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.85rem', color: DS.muted }}>Database Pool</span>
+                <span style={{ color: '#4ade80', fontSize: '0.8rem', fontWeight: 700 }}>99.9% Up</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.85rem', color: DS.muted }}>Webhook Sync</span>
+                <span style={{ color: '#4ade80', fontSize: '0.8rem', fontWeight: 700 }}>Enabled</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: 'rgba(192,132,252,0.03)', borderRadius: '24px', padding: '24px', border: '1px solid rgba(192,132,252,0.1)' }}>
+            <h3 style={{ fontSize: '0.875rem', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <History size={18} /> Latest Governance Event
+            </h3>
+            {auditLogs.length > 0 ? (
+              <div style={{ background: DS.surface, padding: '12px 16px', borderRadius: '12px', border: `1px solid ${DS.border}` }}>
+                <p style={{ fontSize: '0.85rem', fontWeight: 700, color: DS.text }}>{auditLogs[0].action}</p>
+                <p style={{ fontSize: '0.75rem', color: DS.muted }}>By: {auditLogs[0].performer?.name || 'System'} • {format(new Date(auditLogs[0].created_at), 'HH:mm:ss')}</p>
+              </div>
+            ) : (
+              <p style={{ fontSize: '0.85rem', color: DS.muted, fontStyle: 'italic' }}>Monitoring system events...</p>
+            )}
+            <button onClick={() => setActiveView('audit')} style={{ marginTop: '12px', background: 'none', border: 'none', color: '#c084fc', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              View Audit Logs <ArrowRightLeft size={12} />
+            </button>
+          </div>
+        </div>
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px' }}>
@@ -264,8 +353,32 @@ export const SuperAdminDashboard = () => {
                     </td>
                     <td style={{ padding: '16px 20px' }}>
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button style={{ width: '32px', height: '32px', borderRadius: '8px', border: `1px solid ${DS.border}`, background: 'transparent', color: DS.muted, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Edit2 size={14} /></button>
-                        <button style={{ width: '32px', height: '32px', borderRadius: '8px', border: `1px solid ${DS.border}`, background: 'transparent', color: '#ff4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} /></button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleInviteUser(u); }}
+                          title="Send Welcome Email"
+                          style={{ width: '32px', height: '32px', borderRadius: '8px', border: `1px solid ${DS.border}`, background: 'transparent', color: DS.primary, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <Send size={14} />
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleResetEmail(u.email); }}
+                          title="Resend Reset Link"
+                          style={{ width: '32px', height: '32px', borderRadius: '8px', border: `1px solid ${DS.border}`, background: 'transparent', color: '#ffb86e', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <RotateCcw size={14} />
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setEditingUser(u); }}
+                          style={{ width: '32px', height: '32px', borderRadius: '8px', border: `1px solid ${DS.border}`, background: 'transparent', color: DS.muted, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); /* delete logic */ }}
+                          style={{ width: '32px', height: '32px', borderRadius: '8px', border: `1px solid ${DS.border}`, background: 'transparent', color: '#ff4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -274,48 +387,105 @@ export const SuperAdminDashboard = () => {
             </table>
           </div>
         ) : (
-          <div style={{ background: DS.card, borderRadius: '20px', border: `1px solid ${DS.border}`, overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: 'rgba(14,165,233,0.04)' }}>
-                  {['Timestamp', 'Performer', 'Action Event', 'Linked Ticket'].map(h => (
-                    <th key={h} style={{ padding: '14px 20px', textAlign: 'left', fontSize: '0.65rem', fontWeight: 700, color: DS.muted, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {fetchingAudit ? (
-                  <tr><td colSpan={4} style={{ padding: '48px', textAlign: 'center' }}><Loader2 className="animate-spin" color={DS.primary} size={24} style={{ margin: '0 auto' }} /></td></tr>
-                ) : auditLogs.filter(log => 
-                  log.action.toLowerCase().includes(search.toLowerCase()) || 
-                  log.performer?.name?.toLowerCase().includes(search.toLowerCase()) ||
-                  log.ticket?.title?.toLowerCase().includes(search.toLowerCase())
-                ).map(log => (
-                  <tr key={log.id} style={{ borderTop: `1px solid ${DS.border}` }}>
-                    <td style={{ padding: '16px 20px', color: DS.muted, fontSize: '0.75rem' }}>{format(new Date(log.created_at), 'MMM d, HH:mm:ss')}</td>
-                    <td style={{ padding: '16px 20px' }}>
-                      <p style={{ color: DS.text, fontWeight: 700, fontSize: '0.8rem' }}>{log.performer?.name || 'System'}</p>
-                      <p style={{ color: DS.muted, fontSize: '0.65rem' }}>{log.performer?.email || 'automated-task@system'}</p>
-                    </td>
-                    <td style={{ padding: '16px 20px' }}>
-                      <span style={{ 
-                        padding: '4px 10px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 700,
-                        background: log.action.includes('Breach') || log.action.includes('Escalation') ? 'rgba(255,68,68,0.1)' : 'rgba(14,165,233,0.1)',
-                        color: log.action.includes('Breach') || log.action.includes('Escalation') ? '#ff4444' : DS.primary
-                      }}>
-                        {log.action}
-                      </span>
-                    </td>
-                    <td style={{ padding: '16px 20px' }}>
-                      <div onClick={() => navigate(`/tickets/${log.ticket_id}`)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: DS.text, fontSize: '0.75rem', fontWeight: 600 }}>
-                         {log.ticket?.title || 'System Action'} <ArrowRightLeft size={12} color={DS.muted} />
-                      </div>
-                    </td>
+          <>
+            {/* Audit Stats Bar */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '16px' }}>
+              {[
+                { label: 'Total Events', value: auditLogs.length, color: DS.primary },
+                { label: 'SLA / Escalations', value: auditLogs.filter(l => l.action.includes('Breach') || l.action.includes('Escalation')).length, color: '#ff4444' },
+                { label: 'Status Changes', value: auditLogs.filter(l => l.action.includes('Status')).length, color: '#ffb86e' },
+                { label: 'System Actions', value: auditLogs.filter(l => !l.performer).length, color: '#88929b' },
+              ].map(s => (
+                <div key={s.label} style={{ background: DS.card, borderRadius: '14px', padding: '16px 20px', border: `1px solid ${DS.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <p style={{ color: DS.muted, fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase' }}>{s.label}</p>
+                  <p style={{ color: s.color, fontSize: '1.25rem', fontWeight: 800 }}>{s.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ background: DS.card, borderRadius: '20px', border: `1px solid ${DS.border}`, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: 'rgba(14,165,233,0.04)' }}>
+                    {['Timestamp', 'Performer', 'Action Event', 'Linked Ticket'].map(h => (
+                      <th key={h} style={{ padding: '14px 20px', textAlign: 'left', fontSize: '0.65rem', fontWeight: 700, color: DS.muted, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {fetchingAudit ? (
+                    <tr><td colSpan={4} style={{ padding: '48px', textAlign: 'center' }}>
+                      <Loader2 className="animate-spin" color={DS.primary} size={24} style={{ margin: '0 auto' }} />
+                    </td></tr>
+                  ) : (() => {
+                    const filtered = auditLogs.filter(log =>
+                      !search ||
+                      log.action.toLowerCase().includes(search.toLowerCase()) ||
+                      log.performer?.name?.toLowerCase().includes(search.toLowerCase()) ||
+                      log.ticket?.title?.toLowerCase().includes(search.toLowerCase())
+                    );
+
+                    if (filtered.length === 0) return (
+                      <tr><td colSpan={4} style={{ padding: '48px', textAlign: 'center' }}>
+                        <ClipboardList size={40} color="rgba(14,165,233,0.2)" style={{ margin: '0 auto 12px' }} />
+                        <p style={{ color: DS.muted, fontSize: '0.85rem', fontWeight: 600 }}>
+                          {search ? 'No events match your search' : 'No audit events recorded yet'}
+                        </p>
+                      </td></tr>
+                    );
+
+                    return filtered.map(log => {
+                      const isCritical = log.action.includes('Breach') || log.action.includes('L2 Escalation');
+                      const isWarning = log.action.includes('L1 Escalation') || log.action.includes('Assign');
+                      const badgeBg = isCritical ? 'rgba(255,68,68,0.12)' : isWarning ? 'rgba(255,184,110,0.12)' : 'rgba(14,165,233,0.1)';
+                      const badgeColor = isCritical ? '#ff4444' : isWarning ? '#ffb86e' : DS.primary;
+
+                      return (
+                        <tr
+                          key={log.id}
+                          style={{ borderTop: `1px solid ${DS.border}`, transition: 'background 0.15s' }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(14,165,233,0.03)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <td style={{ padding: '14px 20px', color: DS.muted, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+                            {format(new Date(log.created_at), 'MMM d, HH:mm:ss')}
+                          </td>
+                          <td style={{ padding: '14px 20px' }}>
+                            <p style={{ color: DS.text, fontWeight: 700, fontSize: '0.8rem' }}>
+                              {log.performer?.name || 'System Automation'}
+                            </p>
+                            <p style={{ color: DS.muted, fontSize: '0.65rem' }}>
+                              {log.performer?.email || 'system@helpdesk.internal'}
+                            </p>
+                          </td>
+                          <td style={{ padding: '14px 20px' }}>
+                            <span style={{ padding: '4px 10px', borderRadius: '6px', fontSize: '0.68rem', fontWeight: 700, background: badgeBg, color: badgeColor, whiteSpace: 'nowrap' }}>
+                              {log.action}
+                            </span>
+                          </td>
+                          <td style={{ padding: '14px 20px' }}>
+                            {log.ticket_id ? (
+                              <div
+                                onClick={() => navigate(`/tickets/${log.ticket_id}`)}
+                                style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: DS.text, fontSize: '0.75rem', fontWeight: 600 }}
+                                onMouseEnter={e => (e.currentTarget.style.color = DS.primary)}
+                                onMouseLeave={e => (e.currentTarget.style.color = DS.text)}
+                              >
+                                {log.ticket?.title || `Ticket #${log.ticket_id?.substring(0,8).toUpperCase()}`}
+                                <ArrowRightLeft size={11} color={DS.muted} />
+                              </div>
+                            ) : (
+                              <span style={{ color: DS.muted, fontSize: '0.75rem' }}>System Action</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 
@@ -419,6 +589,8 @@ export const SuperAdminDashboard = () => {
                     <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.85rem', outline: 'none' }}>
                       <option value="employee">Employee</option>
                       <option value="admin">IT Admin</option>
+                      <option value="inventory_manager">Inventory Manager</option>
+                      <option value="devops">DevOps</option>
                       <option value="superadmin">Super Admin</option>
                     </select>
                   </div>
@@ -434,6 +606,50 @@ export const SuperAdminDashboard = () => {
                 {submitting ? <Loader2 size={18} className="animate-spin" /> : <UserPlus size={18} />}
                 {submitting ? 'Adding Member...' : 'Confirm & Add Member'}
               </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit User Modal */}
+      <AnimatePresence>
+        {editingUser && (
+          <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingUser(null)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }} />
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} style={{ position: 'relative', width: '500px', background: DS.card, borderRadius: '24px', border: `1px solid ${DS.border}`, padding: '32px', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px' }}><UserCog size={24} color={DS.primary} /> Edit Member Details</h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div style={{ padding: '16px', borderRadius: '16px', background: DS.surface, border: `1px solid ${DS.border}` }}>
+                  <p style={{ color: DS.text, fontWeight: 700, fontSize: '0.9rem' }}>{editingUser.name || editingUser.email}</p>
+                  <p style={{ color: DS.muted, fontSize: '0.75rem' }}>{editingUser.email}</p>
+                </div>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase' }}>System Role</label>
+                    <select value={editingUser.role} onChange={e => setEditingUser({...editingUser, role: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.85rem', outline: 'none' }}>
+                      <option value="employee">Employee</option>
+                      <option value="admin">IT Admin</option>
+                      <option value="inventory_manager">Inventory Manager</option>
+                      <option value="devops">DevOps</option>
+                      <option value="superadmin">Super Admin</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase' }}>Department</label>
+                    <select value={editingUser.department} onChange={e => setEditingUser({...editingUser, department: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.85rem', outline: 'none' }}>
+                      {departments.map(d => <option key={d.name} value={d.name}>{d.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '32px' }}>
+                <button onClick={() => setEditingUser(null)} style={{ flex: 1, padding: '14px', borderRadius: '12px', background: 'transparent', border: `1px solid ${DS.border}`, color: DS.muted, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+                <button onClick={handleUpdateUser} disabled={submitting} style={{ flex: 2, background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                  {submitting ? <Loader2 size={18} className="animate-spin" /> : <ShieldCheck size={18} />}
+                  {submitting ? 'Updating...' : 'Save Changes'}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

@@ -42,13 +42,32 @@ const features = [
 
 export const Login = () => {
   const navigate = useNavigate();
-  const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setError('Please enter your email address first.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      setSuccess('Password reset link sent! Check your email.');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,26 +76,12 @@ export const Login = () => {
     setLoading(true);
 
     try {
-      if (!isLogin) {
-        if (!email.toLowerCase().endsWith('@elitemindz.co')) {
-          throw new Error('Sign up is restricted to @elitemindz.co email addresses only.');
-        }
-        const { error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { data: { role: 'employee' } }
-        });
-        if (signUpError) throw signUpError;
-        setSuccess('Account created! You can now sign in.');
-        setIsLogin(true);
-      } else {
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (signInError) throw signInError;
-        navigate('/');
-      }
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (signInError) throw signInError;
+      navigate('/');
     } catch (err: any) {
       setError(err.message || 'An error occurred during authentication.');
     } finally {
@@ -220,17 +225,18 @@ export const Login = () => {
           {/* Heading */}
           <div style={{ marginBottom: '32px' }}>
             <h2 style={{ color: '#dae2fd', fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '6px' }}>
-              {isLogin ? 'Welcome Back' : 'Create Account'}
+              Welcome Back
             </h2>
             <p style={{ color: '#88929b', fontSize: '0.875rem' }}>
-              {isLogin ? 'Sign in to your workspace' : 'Join the Elite Mindz IT ecosystem'}
+              Sign in to your corporate workspace
             </p>
           </div>
 
           {/* Alerts */}
-          <AnimatePresence>
+          <AnimatePresence mode="wait">
             {error && (
               <motion.div
+                key="error"
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
@@ -247,13 +253,14 @@ export const Login = () => {
               >
                 <AlertCircle size={16} color="#ffb4ab" style={{ marginTop: '1px', flexShrink: 0 }} />
                 <span style={{ color: '#ffb4ab', fontSize: '0.8rem', lineHeight: 1.5 }}>{error}</span>
-                <button onClick={() => setError(null)} style={{ marginLeft: 'auto', color: '#88929b' }}>
+                <button type="button" onClick={() => setError(null)} style={{ marginLeft: 'auto', color: '#88929b', background: 'none', border: 'none' }}>
                   <X size={14} />
                 </button>
               </motion.div>
             )}
             {success && (
               <motion.div
+                key="success"
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
@@ -317,11 +324,9 @@ export const Login = () => {
                 <label style={{ color: '#88929b', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
                   Password
                 </label>
-                {isLogin && (
-                  <button type="button" style={{ color: '#0ea5e9', fontSize: '0.72rem', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>
-                    Forgot Password?
-                  </button>
-                )}
+                <button type="button" onClick={handleForgotPassword} style={{ color: '#0ea5e9', fontSize: '0.72rem', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>
+                  Forgot Password?
+                </button>
               </div>
               <div style={{ position: 'relative' }}>
                 <Lock
@@ -399,24 +404,18 @@ export const Login = () => {
                 </>
               ) : (
                 <>
-                  {isLogin ? 'Sign In to Dashboard' : 'Create Account'}
+                  Sign In to Dashboard
                   <ArrowRight size={16} />
                 </>
               )}
             </motion.button>
           </form>
 
-          {/* Toggle login/signup */}
+          {/* Legal link */}
           <div style={{ textAlign: 'center', marginTop: '24px' }}>
-            <span style={{ color: '#88929b', fontSize: '0.82rem' }}>
-              {isLogin ? "Don't have an account? " : 'Already have an account? '}
+            <span style={{ color: '#4a7fa5', fontSize: '0.7rem', fontWeight: 600 }}>
+              ACCESS RESTRICTED TO AUTHORIZED PERSONNEL
             </span>
-            <button
-              onClick={() => { setIsLogin(!isLogin); setError(null); setSuccess(null); }}
-              style={{ color: '#0ea5e9', fontWeight: 700, fontSize: '0.82rem', background: 'none', border: 'none', cursor: 'pointer' }}
-            >
-              {isLogin ? 'Sign Up' : 'Log In'}
-            </button>
           </div>
         </motion.div>
       </div>
@@ -428,3 +427,4 @@ export const Login = () => {
     </div>
   );
 };
+
