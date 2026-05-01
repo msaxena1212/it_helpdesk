@@ -4,13 +4,14 @@ import {
   ArrowLeft, ChevronDown, Clock, ShieldAlert, User, Mail, Building2, 
   Activity, CheckSquare, AlertCircle, Loader2, Calendar, Tag as TagIcon,
   CheckCircle2, History, UserPlus, X, Upload, MessageSquare, Camera,
-  ShoppingCart, Truck, Package, Tag
+  ShoppingCart, Truck, Package, Tag, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 import { 
   updateStatus, assignTicket, getAllUsers, VALID_TRANSITIONS, 
-  getActivityLogs, addComment, requestInventory, updateProcurementStatus 
+  getActivityLogs, addComment, requestInventory, updateProcurementStatus,
+  updateDevOpsStatus, resubmitForDevOps
 } from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
 import { format } from 'date-fns';
@@ -44,6 +45,13 @@ export const TicketDetail = () => {
   const [remarks, setRemarks] = useState('');
   const [image, setImage] = useState<File | null>(null);
 
+  // DevOps Action Modal State
+  const [showDevOpsModal, setShowDevOpsModal] = useState(false);
+  const [devOpsAction, setDevOpsAction] = useState('');
+  const [devOpsRemarks, setDevOpsRemarks] = useState('');
+  const [errorLogs, setErrorLogs] = useState('');
+  const [errorScreenshot, setErrorScreenshot] = useState<File | null>(null);
+
   useEffect(() => {
     fetchTicket();
     fetchUsers();
@@ -56,7 +64,7 @@ export const TicketDetail = () => {
         .from('tickets')
         .select(`
           *,
-          employee:profiles!employee_id(name, email, department),
+          employee:profiles!employee_id(name, email, department, role),
           assigned:profiles!assigned_to(name, email)
         `)
         .eq('id', id)
@@ -159,6 +167,46 @@ export const TicketDetail = () => {
     }
   };
 
+  const handleDevOpsAction = (action: string) => {
+    // For Error status, always show modal for logs/screenshot
+    // For others, show modal for optional remarks
+    setDevOpsAction(action);
+    setDevOpsRemarks('');
+    setErrorLogs('');
+    setErrorScreenshot(null);
+    setShowDevOpsModal(true);
+  };
+
+  const handleResubmit = async () => {
+    const note = prompt('Add a note about your fix (optional):');
+    setUpdating(true);
+    try {
+      await resubmitForDevOps(ticket.id, note || '');
+      await Promise.all([fetchTicket(), fetchLogs()]);
+      alert('Ticket resubmitted for deployment.');
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const executeDevOpsAction = async () => {
+    setUpdating(true);
+    try {
+      await updateDevOpsStatus(ticket.id, devOpsAction, {
+        remarks: devOpsRemarks || undefined,
+        error_logs: errorLogs || undefined,
+      });
+      setShowDevOpsModal(false);
+      await Promise.all([fetchTicket(), fetchLogs()]);
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   if (loading) return (
     <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: DS.bg }}>
       <Loader2 className="animate-spin" color={DS.primary} size={32} />
@@ -206,7 +254,7 @@ export const TicketDetail = () => {
                 </div>
                 <div>
                   <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '2px' }}>{ticket.employee?.name || ticket.guest_name || 'Guest User'}</h3>
-                  <p style={{ fontSize: '0.8rem', color: DS.muted }}>{ticket.employee?.email || ticket.guest_email || 'No email provided'}</p>
+                  <p style={{ fontSize: '0.8rem', color: DS.muted }}>{ticket.employee?.email || ticket.guest_email || 'No email provided'} • <span style={{ color: DS.primary, fontWeight: 700, textTransform: 'uppercase', fontSize: '0.75rem' }}>{ticket.employee?.role || 'Guest'}</span></p>
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -244,17 +292,40 @@ export const TicketDetail = () => {
               <div style={{ marginTop: '24px', background: 'rgba(0,0,0,0.2)', borderRadius: '16px', padding: '24px', border: `1px solid ${DS.border}` }}>
                 <h4 style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.primary, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '16px' }}>Request Details</h4>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-                  {Object.entries(ticket.custom_fields).map(([key, value]) => (
-                    <div key={key}>
-                      <span style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, color: DS.muted, textTransform: 'uppercase', marginBottom: '4px' }}>
-                        {key.replace(/_/g, ' ')}
-                      </span>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: DS.text }}>
-                        {String(value) || '—'}
-                      </span>
-                    </div>
-                  ))}
+                  {Object.entries(ticket.custom_fields)
+                    .filter(([key]) => ![
+                      'requested_role', 'devops_updated_by', 'devops_updated_at', 
+                      'devops_status', 'devops_remarks', 'error_logs', 'error_screenshot'
+                    ].includes(key))
+                    .map(([key, value]) => (
+                      <div key={key}>
+                        <span style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, color: DS.muted, textTransform: 'uppercase', marginBottom: '4px' }}>
+                          {key.replace(/_/g, ' ')}
+                        </span>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 600, color: DS.text }}>
+                          {String(value) || '—'}
+                        </span>
+                      </div>
+                    ))}
                 </div>
+
+                {/* Technical/DevOps Feedback Section (If any) */}
+                {(ticket.custom_fields.devops_remarks || ticket.custom_fields.error_logs) && (
+                  <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: `1px solid ${DS.border}` }}>
+                    {ticket.custom_fields.devops_remarks && (
+                      <div style={{ marginBottom: '16px' }}>
+                        <span style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, color: DS.warning, textTransform: 'uppercase', marginBottom: '8px' }}>DevOps Remarks</span>
+                        <p style={{ fontSize: '0.85rem', background: DS.surface, padding: '12px', borderRadius: '10px', border: `1px solid ${DS.border}`, color: DS.text }}>{ticket.custom_fields.devops_remarks}</p>
+                      </div>
+                    )}
+                    {ticket.custom_fields.error_logs && (
+                      <div>
+                        <span style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, color: DS.danger, textTransform: 'uppercase', marginBottom: '8px' }}>Error Logs</span>
+                        <pre style={{ fontSize: '0.75rem', background: '#000', padding: '16px', borderRadius: '10px', overflowX: 'auto', border: `1px solid ${DS.border}`, color: '#ff4444', whiteSpace: 'pre-wrap' }}>{ticket.custom_fields.error_logs}</pre>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -343,15 +414,111 @@ export const TicketDetail = () => {
             <div style={{ marginBottom: '24px' }}>
               <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>Current Status</label>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', background: DS.surface, borderRadius: '12px', border: `1px solid ${DS.border}` }}>
-                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: ticket.status === 'Resolved' ? DS.success : ticket.status === 'Open' ? DS.primary : DS.warning }} />
-                <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{ticket.status}</span>
+                {(() => {
+                  const devopsStatus = ticket.custom_fields?.devops_status;
+                  const displayStatus = devopsStatus || ticket.status;
+                  const dotColor = (displayStatus === 'Resolved' || displayStatus === 'Access Given' || displayStatus === 'Deployed' || displayStatus === 'Resubmitted') 
+                    ? DS.success 
+                    : (displayStatus === 'Rejected' || displayStatus === 'Error') 
+                    ? DS.danger 
+                    : displayStatus === 'Open' ? DS.primary : DS.warning;
+                  
+                  return (
+                    <>
+                      <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: dotColor }} />
+                      <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{displayStatus}</span>
+                    </>
+                  );
+                })()}
               </div>
             </div>
 
             <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>Quick Actions</label>
+              {!(userRole === 'employee' && ticket.sub_type === 'Payslip') && (
+                <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>Quick Actions</label>
+              )}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {availableTransitions.map(s => (
+                {/* GitLab Access: DevOps workflow — Access Given / Rejected */}
+                {(userRole === 'admin' || userRole === 'superadmin' || userRole === 'devops') && ticket.issue_type === 'GitLab Access' && !['Resolved', 'Closed'].includes(ticket.status) && (
+                  <>
+                    <button
+                      disabled={updating}
+                      onClick={() => handleDevOpsAction('Access Given')}
+                      style={{ flex: 1, minWidth: '120px', padding: '12px', borderRadius: '10px', background: 'rgba(74,222,128,0.1)', border: `1px solid rgba(74,222,128,0.3)`, color: DS.success, fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      onMouseEnter={e => (e.currentTarget.style.borderColor = DS.success)}
+                      onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(74,222,128,0.3)')}
+                    >
+                      <CheckCircle2 size={16} /> Access Given
+                    </button>
+                    <button
+                      disabled={updating}
+                      onClick={() => handleDevOpsAction('Rejected')}
+                      style={{ flex: 1, minWidth: '120px', padding: '12px', borderRadius: '10px', background: 'rgba(255,68,68,0.1)', border: `1px solid rgba(255,68,68,0.3)`, color: DS.danger, fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      onMouseEnter={e => (e.currentTarget.style.borderColor = DS.danger)}
+                      onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(255,68,68,0.3)')}
+                    >
+                      <X size={16} /> Rejected
+                    </button>
+                  </>
+                )}
+                {(userRole === 'admin' || userRole === 'superadmin' || userRole === 'devops') && ticket.issue_type === 'GitLab Access' && ['Resolved', 'Closed'].includes(ticket.status) && (
+                  <div style={{ 
+                    width: '100%', padding: '12px', 
+                    background: ticket.custom_fields?.devops_status === 'Rejected' ? 'rgba(255,68,68,0.06)' : 'rgba(74,222,128,0.06)', 
+                    borderRadius: '10px', 
+                    border: `1px solid ${ticket.custom_fields?.devops_status === 'Rejected' ? 'rgba(255,68,68,0.15)' : 'rgba(74,222,128,0.15)'}` 
+                  }}>
+                    <p style={{ fontSize: '0.75rem', fontWeight: 700, color: ticket.custom_fields?.devops_status === 'Rejected' ? DS.danger : DS.success, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {ticket.custom_fields?.devops_status === 'Rejected' ? <X size={14} /> : <CheckCircle2 size={14} />} 
+                      {ticket.custom_fields?.devops_status || 'Decision recorded'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Deployment Request: DevOps workflow — Deployed / Error */}
+                {(userRole === 'admin' || userRole === 'superadmin' || userRole === 'devops') && ticket.issue_type === 'Deployment Request' && !['Resolved', 'Closed'].includes(ticket.status) && (
+                  <>
+                    <button
+                      disabled={updating}
+                      onClick={() => handleDevOpsAction('Deployed')}
+                      style={{ flex: 1, minWidth: '120px', padding: '12px', borderRadius: '10px', background: 'rgba(74,222,128,0.1)', border: `1px solid rgba(74,222,128,0.3)`, color: DS.success, fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      onMouseEnter={e => (e.currentTarget.style.borderColor = DS.success)}
+                      onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(74,222,128,0.3)')}
+                    >
+                      <CheckCircle2 size={16} /> Deployed
+                    </button>
+                    <button
+                      disabled={updating}
+                      onClick={() => handleDevOpsAction('Error')}
+                      style={{ flex: 1, minWidth: '120px', padding: '12px', borderRadius: '10px', background: 'rgba(255,68,68,0.1)', border: `1px solid rgba(255,68,68,0.3)`, color: DS.danger, fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      onMouseEnter={e => (e.currentTarget.style.borderColor = DS.danger)}
+                      onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(255,68,68,0.3)')}
+                    >
+                      <AlertCircle size={16} /> Error
+                    </button>
+                  </>
+                )}
+                {(userRole === 'admin' || userRole === 'superadmin' || userRole === 'devops') && ticket.issue_type === 'Deployment Request' && ['Resolved', 'Closed'].includes(ticket.status) && (
+                  <div style={{ width: '100%', padding: '12px', background: ticket.custom_fields?.devops_status === 'Error' ? 'rgba(255,68,68,0.06)' : 'rgba(74,222,128,0.06)', borderRadius: '10px', border: `1px solid ${ticket.custom_fields?.devops_status === 'Error' ? 'rgba(255,68,68,0.15)' : 'rgba(74,222,128,0.15)'}` }}>
+                    <p style={{ fontSize: '0.75rem', fontWeight: 700, color: ticket.custom_fields?.devops_status === 'Error' ? DS.danger : DS.success, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {ticket.custom_fields?.devops_status === 'Error' ? <AlertCircle size={14} /> : <CheckCircle2 size={14} />} {ticket.custom_fields?.devops_status || 'Decision recorded'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Deployment Error Recovery: Requester can resubmit after fix */}
+                {ticket.issue_type === 'Deployment Request' && ticket.custom_fields?.devops_status === 'Error' && ticket.employee_id === profile?.id && userRole !== 'devops' && (
+                  <button
+                    disabled={updating}
+                    onClick={handleResubmit}
+                    style={{ width: '100%', padding: '14px', borderRadius: '12px', background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', border: 'none', color: '#fff', fontSize: '0.85rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '16px' }}
+                  >
+                    <RefreshCw size={18} className={updating ? 'animate-spin' : ''} /> Fix Applied - Resubmit for Deployment
+                  </button>
+                )}
+
+                {/* Standard tickets: generic status transitions */}
+                {(userRole === 'admin' || userRole === 'superadmin') && !['GitLab Access', 'Deployment Request'].includes(ticket.issue_type) && availableTransitions.map(s => (
                   <button
                     key={s}
                     disabled={updating}
@@ -363,24 +530,83 @@ export const TicketDetail = () => {
                     Move to {s}
                   </button>
                 ))}
-                {availableTransitions.length === 0 && <p style={{ fontSize: '0.75rem', fontStyle: 'italic', color: DS.muted }}>No further transitions possible</p>}
+                
+                {userRole === 'hr' && ticket.sub_type === 'Payslip' && ticket.status !== 'Closed' && (
+                  <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ padding: '16px', background: 'rgba(14,165,233,0.1)', borderRadius: '16px', border: `1px solid ${DS.primary}` }}>
+                      <p style={{ fontSize: '0.8rem', fontWeight: 700, color: DS.primary, marginBottom: '12px' }}>UPLOAD PAYSLIP (PDF ONLY)</p>
+                      <input 
+                        type="file" 
+                        accept=".pdf"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setUpdating(true);
+                            try {
+                              // Simulate upload & Close ticket
+                              await addComment(ticket.id, `Payslip uploaded by HR: ${file.name}`);
+                              await updateStatus(ticket.id, ticket.status, 'Closed');
+                              alert('Payslip uploaded and ticket closed successfully.');
+                              fetchTicket();
+                              fetchLogs();
+                            } catch (err) {
+                              console.error(err);
+                            } finally {
+                              setUpdating(false);
+                            }
+                          }
+                        }}
+                        style={{ width: '100%', fontSize: '0.75rem', color: DS.text }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {userRole === 'employee' && ticket.sub_type !== 'Payslip' && (
+                  <p style={{ fontSize: '0.75rem', fontStyle: 'italic', color: DS.muted }}>Only comments and attachments allowed for employees.</p>
+                )}
+                
+                {(userRole === 'admin' || userRole === 'superadmin') && !['GitLab Access', 'Deployment Request'].includes(ticket.issue_type) && availableTransitions.length === 0 && <p style={{ fontSize: '0.75rem', fontStyle: 'italic', color: DS.muted }}>No further transitions possible</p>}
               </div>
             </div>
 
-            <div>
-              <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>Assign Agent</label>
-              <select
-                disabled={updating}
-                value={ticket.assigned_to || ''}
-                onChange={(e) => handleAssign(e.target.value)}
-                style={{ width: '100%', padding: '12px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.85rem', fontWeight: 600, outline: 'none' }}
-              >
-                <option value="">Unassigned</option>
-                {users.map(u => (
-                  <option key={u.id} value={u.id}>{u.name}</option>
-                ))}
-              </select>
-            </div>
+            {(userRole === 'admin' || userRole === 'superadmin') ? (
+              <div>
+                <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>Assign Agent</label>
+                <select
+                  disabled={updating}
+                  value={ticket.assigned_to || ''}
+                  onChange={(e) => handleAssign(e.target.value)}
+                  style={{ width: '100%', padding: '12px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.85rem', fontWeight: 600, outline: 'none' }}
+                >
+                  <option value="">Unassigned</option>
+                  {users.map(u => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>Assigned To</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ padding: '12px 16px', background: DS.surface, borderRadius: '12px', border: `1px solid ${DS.border}`, fontSize: '0.85rem', fontWeight: 700, color: DS.primary }}>
+                    {ticket.assigned?.name || 'Unassigned'}
+                  </div>
+                  
+                  {userRole === 'devops' && !ticket.assigned_to && ['Deployment Request', 'GitLab Access'].includes(ticket.issue_type) && (
+                    <button
+                      disabled={updating}
+                      onClick={() => handleAssign(profile?.id || '')}
+                      style={{ width: '100%', padding: '10px', borderRadius: '10px', background: 'rgba(14,165,233,0.1)', border: `1px solid ${DS.primary}`, color: DS.primary, fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(14,165,233,0.2)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'rgba(14,165,233,0.1)')}
+                    >
+                      Claim Ticket
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* SLA Card */}
@@ -540,6 +766,106 @@ export const TicketDetail = () => {
                   style={{ flex: 2, padding: '12px', borderRadius: '12px', background: DS.primary, border: 'none', color: '#fff', fontWeight: 800, cursor: 'pointer' }}
                 >
                   Send Request
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* DevOps Action Modal */}
+      <AnimatePresence>
+        {showDevOpsModal && (
+          <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '20px' }}>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowDevOpsModal(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }} />
+            <motion.div initial={{ scale: 0.95, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 20 }} style={{ position: 'relative', width: '100%', maxWidth: '560px', background: DS.card, borderRadius: '28px', border: `1px solid ${DS.border}`, padding: '32px', boxShadow: '0 24px 64px rgba(0,0,0,0.6)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  {devOpsAction === 'Error' ? <AlertCircle size={24} color={DS.danger} /> : devOpsAction === 'Rejected' ? <X size={24} color={DS.danger} /> : <CheckCircle2 size={24} color={DS.success} />}
+                  {devOpsAction === 'Access Given' ? 'Grant Access' : devOpsAction === 'Deployed' ? 'Confirm Deployment' : devOpsAction === 'Error' ? 'Report Deployment Error' : 'Reject Access'}
+                </h2>
+                <button onClick={() => setShowDevOpsModal(false)} style={{ background: 'none', border: 'none', color: DS.muted, cursor: 'pointer' }}><X size={20} /></button>
+              </div>
+
+              {/* Status indicator */}
+              <div style={{ padding: '12px 16px', borderRadius: '12px', marginBottom: '24px', background: devOpsAction === 'Error' || devOpsAction === 'Rejected' ? 'rgba(255,68,68,0.08)' : 'rgba(74,222,128,0.08)', border: `1px solid ${devOpsAction === 'Error' || devOpsAction === 'Rejected' ? 'rgba(255,68,68,0.2)' : 'rgba(74,222,128,0.2)'}` }}>
+                <p style={{ fontSize: '0.8rem', fontWeight: 700, color: devOpsAction === 'Error' || devOpsAction === 'Rejected' ? DS.danger : DS.success }}>
+                  Ticket will be moved to: {devOpsAction === 'Access Given' || devOpsAction === 'Deployed' ? 'Resolved' : devOpsAction === 'Rejected' ? 'Closed' : 'In Progress'}
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {/* Remarks */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Remarks {devOpsAction === 'Error' || devOpsAction === 'Rejected' ? <span style={{ color: DS.danger }}>*</span> : '(Optional)'}
+                  </label>
+                  <textarea
+                    value={devOpsRemarks}
+                    onChange={e => setDevOpsRemarks(e.target.value)}
+                    placeholder={devOpsAction === 'Error' ? 'Describe what went wrong...' : devOpsAction === 'Rejected' ? 'Reason for rejection...' : 'Add any notes...'}
+                    style={{ width: '100%', height: '100px', padding: '16px', borderRadius: '16px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.9rem', outline: 'none', resize: 'none', lineHeight: 1.5, boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                {/* Error-specific: Logs and Screenshot */}
+                {devOpsAction === 'Error' && (
+                  <>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <label style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Error Logs <span style={{ color: DS.danger }}>*</span>
+                      </label>
+                      <textarea
+                        value={errorLogs}
+                        onChange={e => setErrorLogs(e.target.value)}
+                        placeholder="Paste the error logs here..."
+                        style={{ width: '100%', height: '160px', padding: '16px', borderRadius: '16px', background: '#0c0c1a', border: `1px solid rgba(255,68,68,0.2)`, color: '#ff9999', fontSize: '0.8rem', outline: 'none', resize: 'vertical', lineHeight: 1.6, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", boxSizing: 'border-box' }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <label style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Error Screenshot (Optional)</label>
+                      <div style={{ position: 'relative', padding: '24px', borderRadius: '16px', border: `2px dashed rgba(255,68,68,0.25)`, background: DS.surface, textAlign: 'center' }}>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={e => setErrorScreenshot(e.target.files?.[0] || null)}
+                          style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }}
+                        />
+                        {errorScreenshot ? (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', color: DS.success }}>
+                            <Camera size={20} />
+                            <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>{errorScreenshot.name}</span>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: DS.muted }}>
+                            <Upload size={24} />
+                            <p style={{ fontSize: '0.8rem', fontWeight: 600 }}>Click to upload error screenshot</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '32px' }}>
+                <button onClick={() => setShowDevOpsModal(false)} style={{ flex: 1, padding: '14px', borderRadius: '14px', background: 'transparent', border: `1px solid ${DS.border}`, color: DS.text, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+                <button
+                  disabled={updating || ((devOpsAction === 'Error') && (!devOpsRemarks || !errorLogs)) || (devOpsAction === 'Rejected' && !devOpsRemarks)}
+                  onClick={executeDevOpsAction}
+                  style={{
+                    flex: 2, padding: '14px', borderRadius: '14px',
+                    background: (devOpsAction === 'Error' || devOpsAction === 'Rejected')
+                      ? ((devOpsAction === 'Error' && (!devOpsRemarks || !errorLogs)) || (devOpsAction === 'Rejected' && !devOpsRemarks) ? DS.muted : 'linear-gradient(135deg, #ef4444, #dc2626)')
+                      : 'linear-gradient(135deg, #4ade80, #22c55e)',
+                    border: 'none', color: '#fff', fontWeight: 800,
+                    cursor: ((devOpsAction === 'Error' && (!devOpsRemarks || !errorLogs)) || (devOpsAction === 'Rejected' && !devOpsRemarks)) ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
+                  }}
+                >
+                  {updating ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
+                  {devOpsAction === 'Error' ? 'Report Error' : devOpsAction === 'Rejected' ? 'Reject Access' : `Confirm ${devOpsAction}`}
                 </button>
               </div>
             </motion.div>

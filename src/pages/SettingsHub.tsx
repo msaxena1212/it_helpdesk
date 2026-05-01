@@ -10,26 +10,29 @@ const DS = {
   text: '#dae2fd', muted: '#88929b', surface: '#0b1326',
 };
 
-const sections = [
-  { id: 'profile', name: 'Profile', icon: User },
-  { id: 'sla', name: 'SLA Configuration', icon: Clock },
-  { id: 'permissions', name: 'Roles & Permissions', icon: Shield },
-  { id: 'notifications', name: 'Notifications', icon: Bell },
-  { id: 'logs', name: 'System Logs', icon: Activity },
-];
-
 const slaDefaults: Record<string, number> = {
   critical: 4, high: 12, medium: 24, low: 48,
 };
 
 export const SettingsHub = () => {
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
+  
+  const role = profile?.role || 'employee';
+  const isSuper = role === 'superadmin' || user?.email === 'superadmin@elitemindz.co';
+  const isAdmin = role === 'admin' || isSuper;
+
+  const sections = [
+    { id: 'profile', name: 'Profile', icon: User },
+    ...(isAdmin ? [{ id: 'sla', name: 'SLA Configuration', icon: Clock }] : []),
+    ...(isSuper ? [{ id: 'permissions', name: 'Roles & Permissions', icon: Shield }] : []),
+    { id: 'notifications', name: 'Notifications', icon: Bell },
+    ...(isSuper ? [{ id: 'logs', name: 'System Logs', icon: Activity }] : []),
+  ];
+
   const [activeSection, setActiveSection] = useState('profile');
   const [sla, setSla] = useState(slaDefaults);
   const [saved, setSaved] = useState(false);
-
-  const role = user?.user_metadata?.role || 'employee';
 
   const handleSave = () => {
     setSaved(true);
@@ -81,7 +84,7 @@ export const SettingsHub = () => {
               <InputField label="Display Name" value={user?.email?.split('@')[0] || ''} onChange={() => {}} />
               <InputField label="Email" value={user?.email || ''} type="email" onChange={() => {}} />
             </div>
-            <InputField label="Department" value="" onChange={() => {}} />
+            <InputField label="Department" value={profile?.department || 'General'} onChange={() => {}} />
 
             <div style={{ display: 'flex', gap: '12px' }}>
               <button

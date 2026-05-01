@@ -14,6 +14,8 @@ const DS = {
   text: '#dae2fd', muted: '#88929b', surface: '#0b1326',
 };
 
+import { useAuth } from '../lib/AuthContext';
+
 const categories = ['Hardware', 'Software', 'Network', 'Access / Login', 'Deployment Request', 'GitLab Access', 'Other'];
 const departmentsList = ['Engineering', 'Product', 'HR', 'Sales', 'Marketing', 'Finance', 'Other'];
 const priorities = [
@@ -39,6 +41,8 @@ const inputStyle = {
 
 export const CreateTicket = () => {
   const navigate = useNavigate();
+  const { user, profile } = useAuth();
+  
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,9 +71,22 @@ export const CreateTicket = () => {
     justification: ''
   });
 
+  const canCreateOnBehalf = profile?.role === 'admin' || profile?.role === 'superadmin' || profile?.role === 'network_engineer' || user?.email === 'superadmin@elitemindz.co';
+
   useEffect(() => {
-    getAllUsers().then(data => setUsers(data || [])).catch(console.error);
-  }, []);
+    if (canCreateOnBehalf) {
+      getAllUsers().then(data => setUsers(data || [])).catch(console.error);
+    } else if (user) {
+      // Pre-fill for standard user
+      setFormData(prev => ({
+        ...prev,
+        employee_id: user.id,
+        name: profile?.name || user.user_metadata?.name || user.email?.split('@')[0] || '',
+        email: user.email || '',
+        department: profile?.department || user.user_metadata?.department || ''
+      }));
+    }
+  }, [user, profile, canCreateOnBehalf]);
 
   const handleUserSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedId = e.target.value;
@@ -98,7 +115,8 @@ export const CreateTicket = () => {
       }
     }
     if (step === 2) {
-      if (!formData.title || !formData.description || !formData.category || !formData.frequency) {
+      const isDevOps = ['GitLab Access', 'Deployment Request'].includes(formData.category);
+      if (!formData.title || !formData.description || !formData.category || (!isDevOps && !formData.frequency)) {
         setError("Please fill all required issue details");
         return;
       }
@@ -133,7 +151,7 @@ export const CreateTicket = () => {
           rollback_plan: formData.rollback_plan
         } : formData.category === 'GitLab Access' ? {
           gitlab_repo_url: formData.gitlab_repo_url,
-          requested_role: formData.requested_role,
+          requested_role: profile?.role || 'User',
           justification: formData.justification
         } : {}
       });
@@ -155,7 +173,7 @@ export const CreateTicket = () => {
           <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
             style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}
           >
-            {users.length > 0 && (
+            {canCreateOnBehalf && users.length > 0 && (
               <div>
                 <FieldLabel>Select User (Optional)</FieldLabel>
                 <select
@@ -180,8 +198,9 @@ export const CreateTicket = () => {
                 <input
                   type="text" placeholder="Enter your full name"
                   value={formData.name}
+                  readOnly={!canCreateOnBehalf}
                   onChange={e => setFormData({ ...formData, name: e.target.value })}
-                  style={{ ...inputStyle, paddingLeft: '40px' }}
+                  style={{ ...inputStyle, paddingLeft: '40px', opacity: !canCreateOnBehalf ? 0.7 : 1 }}
                   onFocus={e => (e.target.style.borderColor = 'rgba(14,165,233,0.5)')}
                   onBlur={e => (e.target.style.borderColor = DS.border)}
                 />
@@ -194,8 +213,9 @@ export const CreateTicket = () => {
                 <input
                   type="email" placeholder="Use your official company email"
                   value={formData.email}
+                  readOnly={!canCreateOnBehalf}
                   onChange={e => setFormData({ ...formData, email: e.target.value })}
-                  style={{ ...inputStyle, paddingLeft: '40px' }}
+                  style={{ ...inputStyle, paddingLeft: '40px', opacity: !canCreateOnBehalf ? 0.7 : 1 }}
                   onFocus={e => (e.target.style.borderColor = 'rgba(14,165,233,0.5)')}
                   onBlur={e => (e.target.style.borderColor = DS.border)}
                 />
@@ -207,8 +227,9 @@ export const CreateTicket = () => {
                 <Building2 size={16} color={DS.muted} style={{ position: 'absolute', left: '14px', top: '14px' }} />
                 <select
                   value={formData.department}
+                  disabled={!canCreateOnBehalf}
                   onChange={e => setFormData({ ...formData, department: e.target.value })}
-                  style={{ ...inputStyle, paddingLeft: '40px', cursor: 'pointer' }}
+                  style={{ ...inputStyle, paddingLeft: '40px', cursor: !canCreateOnBehalf ? 'default' : 'pointer', opacity: !canCreateOnBehalf ? 0.7 : 1 }}
                   onFocus={e => (e.target.style.borderColor = 'rgba(14,165,233,0.5)')}
                   onBlur={e => (e.target.style.borderColor = DS.border)}
                 >
@@ -298,39 +319,35 @@ export const CreateTicket = () => {
                   <input type="text" value={formData.gitlab_repo_url} onChange={e => setFormData({ ...formData, gitlab_repo_url: e.target.value })} placeholder="https://gitlab.com/org/repo" style={inputStyle} />
                 </div>
                 <div>
-                  <FieldLabel required>Requested Role</FieldLabel>
-                  <select value={formData.requested_role} onChange={e => setFormData({ ...formData, requested_role: e.target.value })} style={inputStyle}>
-                    <option>Guest</option><option>Reporter</option><option>Developer</option><option>Maintainer</option>
-                  </select>
-                </div>
-                <div>
                   <FieldLabel required>Justification</FieldLabel>
                   <textarea rows={2} value={formData.justification} onChange={e => setFormData({ ...formData, justification: e.target.value })} placeholder="Why do you need access?" style={{ ...inputStyle, resize: 'vertical' }} />
                 </div>
               </>
             )}
 
-            <div>
-              <FieldLabel required>Frequency of Issue</FieldLabel>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                {frequencies.map(f => (
-                  <button
-                    key={f}
-                    onClick={() => setFormData({ ...formData, frequency: f })}
-                    style={{
-                      flex: 1, padding: '10px', borderRadius: '10px', border: 'none',
-                      background: formData.frequency === f ? 'rgba(14,165,233,0.15)' : 'rgba(255,255,255,0.04)',
-                      color: formData.frequency === f ? '#89ceff' : DS.muted,
-                      fontWeight: formData.frequency === f ? 700 : 600, fontSize: '0.75rem',
-                      outline: formData.frequency === f ? `1px solid rgba(14,165,233,0.5)` : '1px solid transparent',
-                      cursor: 'pointer', transition: 'all 0.15s',
-                    }}
-                  >
-                    {f}
-                  </button>
-                ))}
+            {!['GitLab Access', 'Deployment Request'].includes(formData.category) && (
+              <div>
+                <FieldLabel required>Frequency of Issue</FieldLabel>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {frequencies.map(f => (
+                    <button
+                      key={f}
+                      onClick={() => setFormData({ ...formData, frequency: f })}
+                      style={{
+                        flex: 1, padding: '10px', borderRadius: '10px', border: 'none',
+                        background: formData.frequency === f ? 'rgba(14,165,233,0.15)' : 'rgba(255,255,255,0.04)',
+                        color: formData.frequency === f ? '#89ceff' : DS.muted,
+                        fontWeight: formData.frequency === f ? 700 : 600, fontSize: '0.75rem',
+                        outline: formData.frequency === f ? `1px solid rgba(14,165,233,0.5)` : '1px solid transparent',
+                        cursor: 'pointer', transition: 'all 0.15s',
+                      }}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </motion.div>
         );
 
@@ -384,20 +401,22 @@ export const CreateTicket = () => {
               </div>
             </div>
 
-            <div>
-              <FieldLabel>When did this issue start?</FieldLabel>
-              <div style={{ position: 'relative' }}>
-                <Calendar size={16} color={DS.muted} style={{ position: 'absolute', left: '14px', top: '14px' }} />
-                <input
-                  type="date"
-                  value={formData.issue_start_date}
-                  onChange={e => setFormData({ ...formData, issue_start_date: e.target.value })}
-                  style={{ ...inputStyle, paddingLeft: '40px', cursor: 'pointer' }}
-                  onFocus={e => (e.target.style.borderColor = 'rgba(14,165,233,0.5)')}
-                  onBlur={e => (e.target.style.borderColor = DS.border)}
-                />
+            {!['GitLab Access', 'Deployment Request'].includes(formData.category) && (
+              <div>
+                <FieldLabel>When did this issue start?</FieldLabel>
+                <div style={{ position: 'relative' }}>
+                  <Calendar size={16} color={DS.muted} style={{ position: 'absolute', left: '14px', top: '14px' }} />
+                  <input
+                    type="date"
+                    value={formData.issue_start_date}
+                    onChange={e => setFormData({ ...formData, issue_start_date: e.target.value })}
+                    style={{ ...inputStyle, paddingLeft: '40px', cursor: 'pointer' }}
+                    onFocus={e => (e.target.style.borderColor = 'rgba(14,165,233,0.5)')}
+                    onBlur={e => (e.target.style.borderColor = DS.border)}
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </motion.div>
         );
 

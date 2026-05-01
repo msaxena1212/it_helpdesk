@@ -15,20 +15,27 @@ const DS = {
   text: '#dae2fd', muted: '#88929b', surface: '#0b1326',
 };
 
-const Badge = ({ status }: { status: string }) => {
+const Badge = ({ status, customFields }: { status: string; customFields?: any }) => {
+  const displayStatus = customFields?.devops_status || status;
   const map: Record<string, { bg: string; color: string }> = {
     'Open': { bg: 'rgba(14,165,233,0.15)', color: '#89ceff' },
+    'Assigned': { bg: 'rgba(14,165,233,0.15)', color: '#89ceff' },
     'In Progress': { bg: 'rgba(255,184,110,0.15)', color: '#ffb86e' },
+    'Waiting for User': { bg: 'rgba(255,184,110,0.15)', color: '#ffb86e' },
     'Resolved': { bg: 'rgba(74,222,128,0.15)', color: '#4ade80' },
+    'Access Given': { bg: 'rgba(74,222,128,0.15)', color: '#4ade80' },
+    'Deployed': { bg: 'rgba(74,222,128,0.15)', color: '#4ade80' },
+    'Rejected': { bg: 'rgba(255,68,68,0.15)', color: '#ff4444' },
+    'Error': { bg: 'rgba(255,68,68,0.15)', color: '#ff4444' },
     'Closed': { bg: 'rgba(136,146,155,0.15)', color: '#88929b' },
   };
-  const s = map[status] || map['Open'];
+  const s = map[displayStatus] || map['Open'];
   return (
     <span style={{
       ...s, padding: '2px 10px', borderRadius: '9999px',
       fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
     }}>
-      {status?.replace('_', ' ')}
+      {displayStatus?.replace('_', ' ')}
     </span>
   );
 };
@@ -58,8 +65,6 @@ export const TicketList = () => {
   const [categoryFilter, setCategoryFilter] = useState('all');
 
   useEffect(() => { 
-    if (profile?.role === 'devops') setCategoryFilter('Deployment Request');
-    if (profile?.role === 'inventory_manager') setStatusFilter('Waiting for Inventory');
     fetchTickets(); 
   }, [profile]);
 
@@ -80,6 +85,7 @@ export const TicketList = () => {
   const filtered = tickets.filter(t => {
     const matchSearch = t.title?.toLowerCase().includes(search.toLowerCase()) ||
       t.id?.toLowerCase().includes(search.toLowerCase()) ||
+      t.status?.toLowerCase().includes(search.toLowerCase()) ||
       (t.employee?.name || t.guest_name || '')?.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === 'all' || t.status === statusFilter;
     const matchCategory = categoryFilter === 'all' || t.issue_type === categoryFilter;
@@ -88,8 +94,15 @@ export const TicketList = () => {
     const isEmployee = profile?.role === 'employee';
     const matchUser = !isEmployee || t.employee_id === profile?.id;
 
-    return matchSearch && matchStatus && matchCategory && matchUser;
+    // DevOps security/relevance: only see devops-related tickets
+    const isDevOps = profile?.role === 'devops';
+    const matchDevOps = !isDevOps || ['Deployment Request', 'GitLab Access'].includes(t.issue_type);
+
+    return matchSearch && matchStatus && matchCategory && matchUser && matchDevOps;
   });
+
+  const loggedInName = profile?.name || user?.user_metadata?.name || user?.email?.split('@')[0] || '';
+  const hideRequester = filtered.length > 0 && filtered.every(t => (t.employee?.name || t.guest_name || 'Guest') === loggedInName);
 
   const handleExportExcel = () => {
     const wb = utils.book_new();
@@ -156,7 +169,7 @@ export const TicketList = () => {
             />
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            {['all', 'Open', 'In Progress', 'Resolved', 'Closed'].map(s => (
+            {['all', 'Open', 'In Progress', 'Waiting for User', 'Resolved', 'Closed'].map(s => (
               <button 
                 key={s} 
                 onClick={() => setStatusFilter(s)}
@@ -171,19 +184,26 @@ export const TicketList = () => {
             ))}
           </div>
           <div style={{ display: 'flex', gap: '8px', borderLeft: `1px solid ${DS.border}`, paddingLeft: '16px' }}>
-            {['all', 'Hardware', 'Software', 'Deployment Request', 'GitLab Access'].map(c => (
-              <button 
-                key={c} 
-                onClick={() => setCategoryFilter(c)}
-                style={{ 
-                  padding: '10px 16px', borderRadius: '10px', border: 'none', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer',
-                  background: categoryFilter === c ? 'rgba(14,165,233,0.15)' : 'transparent',
-                  color: categoryFilter === c ? DS.primary : DS.muted,
-                }}
-              >
-                {c === 'all' ? 'All Types' : c}
-              </button>
-            ))}
+            {['all', 'Hardware', 'Software', 'Deployment Request', 'GitLab Access']
+              .filter(c => {
+                if (profile?.role === 'devops') {
+                  return ['all', 'Deployment Request', 'GitLab Access'].includes(c);
+                }
+                return true;
+              })
+              .map(c => (
+                <button 
+                  key={c} 
+                  onClick={() => setCategoryFilter(c)}
+                  style={{ 
+                    padding: '10px 16px', borderRadius: '10px', border: 'none', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer',
+                    background: categoryFilter === c ? 'rgba(14,165,233,0.15)' : 'transparent',
+                    color: categoryFilter === c ? DS.primary : DS.muted,
+                  }}
+                >
+                  {c === 'all' ? 'All Types' : c}
+                </button>
+              ))}
           </div>
         </div>
 
@@ -192,7 +212,7 @@ export const TicketList = () => {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'rgba(14,165,233,0.03)' }}>
-                {['ID', 'Requester', 'Subject', 'Status', 'Priority', 'Assigned To', 'Date'].map(h => (
+                {['ID', ...(!hideRequester ? ['Requester'] : []), 'Subject', 'Status', 'Priority', 'Assigned To', 'Date'].map(h => (
                   <th key={h} style={{ padding: '16px 20px', textAlign: 'left', fontSize: '0.65rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{h}</th>
                 ))}
                 <th style={{ padding: '16px 20px' }}></th>
@@ -210,17 +230,19 @@ export const TicketList = () => {
                   <td style={{ padding: '18px 20px' }}>
                     <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', fontWeight: 700, color: DS.primary }}>#{t.id.substring(0,8).toUpperCase()}</span>
                   </td>
-                  <td style={{ padding: '18px 20px' }}>
-                    <p style={{ fontSize: '0.85rem', fontWeight: 700, color: DS.text }}>{t.employee?.name || t.guest_name || 'Guest'}</p>
-                    <p style={{ fontSize: '0.7rem', color: DS.muted }}>{t.department || t.employee?.department || (t.guest_name ? 'External' : 'Unknown')}</p>
-                  </td>
+                  {!hideRequester && (
+                    <td style={{ padding: '18px 20px' }}>
+                      <p style={{ fontSize: '0.85rem', fontWeight: 700, color: DS.text }}>{t.employee?.name || t.guest_name || 'Guest'}</p>
+                      <p style={{ fontSize: '0.7rem', color: DS.muted }}>{t.department || t.employee?.department || (t.guest_name ? 'External' : 'Unknown')}</p>
+                    </td>
+                  )}
                   <td style={{ padding: '18px 20px', maxWidth: '300px' }}>
                     <p style={{ fontSize: '0.875rem', fontWeight: 600, color: DS.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</p>
                     <p style={{ fontSize: '0.7rem', color: DS.muted, textTransform: 'capitalize' }}>{t.issue_type} • {t.sub_type || 'General'}</p>
                   </td>
                   <td style={{ padding: '18px 20px' }}>
                     <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <Badge status={t.status} />
+                      <Badge status={t.status} customFields={t.custom_fields} />
                       <EscalationBadge level={t.escalation_level} />
                     </div>
                   </td>

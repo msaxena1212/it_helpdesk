@@ -17,6 +17,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   'employee': [PERMISSIONS.CREATE_TICKET],
   'admin': [PERMISSIONS.VIEW_ALL, PERMISSIONS.ASSIGN_TICKET, PERMISSIONS.UPDATE_STATUS, PERMISSIONS.MANAGE_ASSETS, PERMISSIONS.VIEW_ANALYTICS],
   'inventory_manager': [PERMISSIONS.VIEW_ALL, PERMISSIONS.UPDATE_STATUS],
+  'devops': [PERMISSIONS.VIEW_ALL, PERMISSIONS.UPDATE_STATUS],
   'superadmin': Object.values(PERMISSIONS)
 };
 
@@ -76,6 +77,22 @@ export const createTicket = async (ticketData: any) => {
   const sla_deadline = new Date();
   sla_deadline.setHours(sla_deadline.getHours() + slaDuration);
 
+  // Auto-assignment for DevOps tickets
+  let assignedTo = null;
+  let initialStatus = 'Open';
+  if (['Deployment Request', 'GitLab Access'].includes(issue_type)) {
+    const { data: devopsUsers } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('role', 'devops')
+      .limit(1);
+    
+    if (devopsUsers && devopsUsers.length > 0) {
+      assignedTo = devopsUsers[0].id;
+      initialStatus = 'Assigned';
+    }
+  }
+
   const { data, error } = await supabase
     .from('tickets')
     .insert([{
@@ -84,7 +101,8 @@ export const createTicket = async (ticketData: any) => {
       issue_type,
       sub_type,
       priority,
-      status: 'Open',
+      status: initialStatus,
+      assigned_to: assignedTo,
       employee_id: targetEmployeeId,
       guest_name: targetEmployeeId ? null : guest_name,
       guest_email: targetEmployeeId ? null : guest_email,
@@ -93,7 +111,8 @@ export const createTicket = async (ticketData: any) => {
       is_blocked: is_blocked || false,
       issue_start_date: issue_start_date || null,
       frequency: frequency || null,
-      sla_deadline: sla_deadline.toISOString()
+      sla_deadline: sla_deadline.toISOString(),
+      custom_fields: ticketData.custom_fields || {}
     }])
     .select()
     .single();
@@ -103,9 +122,30 @@ export const createTicket = async (ticketData: any) => {
   // Log activity
   await supabase.from('activity_logs').insert([{
     ticket_id: data.id,
-    action: 'Ticket created',
+    action: `Ticket created${assignedTo ? ' and auto-assigned to DevOps' : ''}`,
     performed_by: userData.user.id
   }]);
+
+  if (assignedTo) {
+    await supabase.from('ticket_status_history').insert([{
+      ticket_id: data.id,
+      old_status: 'Open',
+      new_status: 'Assigned',
+      changed_by: userData.user.id
+    }]);
+  }
+
+  // Get Requester Name for Webhook
+  let requesterName = guest_name || '';
+  let requesterEmail = guest_email || '';
+  
+  if (!requesterName && targetEmployeeId) {
+    const { data: p } = await supabase.from('profiles').select('name, email').eq('id', targetEmployeeId).single();
+    if (p) {
+      requesterName = p.name;
+      requesterEmail = p.email;
+    }
+  }
 
   // Sync to Google Sheets
   const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL;
@@ -119,8 +159,8 @@ export const createTicket = async (ticketData: any) => {
         body: JSON.stringify({
           type: 'ticket',
           id: data.id,
-          name: ticketData.name || '',
-          email: ticketData.email || '',
+          name: requesterName,
+          email: requesterEmail,
           department: ticketData.department || '',
           title: data.title,
           description: data.description,
@@ -129,7 +169,8 @@ export const createTicket = async (ticketData: any) => {
           priority: data.priority,
           is_blocked: data.is_blocked,
           issue_start_date: data.issue_start_date,
-          frequency: data.frequency
+          frequency: data.frequency,
+          custom_fields: ticketData.custom_fields || {}
         })
       }).catch(err => console.error("Sheet Sync Error:", err));
     } catch (err) {
@@ -365,6 +406,154 @@ export const updateProcurementStatus = async (ticketId: string, newStatus: strin
       ));
     }
   }
+
+  return data;
+};
+
+// --- DevOps Workflow API ---
+export const updateDevOpsStatus = async (
+  ticketId: string,
+  devopsStatus: string,
+  details?: { remarks?: string; error_logs?: string; screenshot_url?: string }
+) => {
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) throw new Error('Not authenticated');
+
+  // Fetch the current ticket to merge custom_fields
+  const { data: currentTicket } = await supabase
+    .from('tickets')
+    .select('custom_fields, status, employee_id')
+    .eq('id', ticketId)
+    .single();
+
+  const existingFields = currentTicket?.custom_fields || {};
+
+  const mergedFields = {
+    ...existingFields,
+    devops_status: devopsStatus,
+    devops_updated_by: userData.user.id,
+    devops_updated_at: new Date().toISOString(),
+    ...(details?.remarks ? { devops_remarks: details.remarks } : {}),
+    ...(details?.error_logs ? { error_logs: details.error_logs } : {}),
+    ...(details?.screenshot_url ? { error_screenshot: details.screenshot_url } : {}),
+  };
+
+  // Map devops status to ticket status
+  const ticketStatusMap: Record<string, string> = {
+    'Access Given': 'Resolved',
+    'Rejected': 'Closed',
+    'Deployed': 'Resolved',
+    'Error': 'In Progress',
+  };
+  const newTicketStatus = ticketStatusMap[devopsStatus] || currentTicket?.status;
+
+  const updatePayload: any = {
+    custom_fields: mergedFields,
+    status: newTicketStatus,
+    updated_at: new Date().toISOString()
+  };
+
+  // REASSIGNMENT LOGIC: If error, send back to requester
+  if (devopsStatus === 'Error' && currentTicket?.employee_id) {
+    updatePayload.assigned_to = currentTicket.employee_id;
+  }
+
+  const { data, error } = await supabase
+    .from('tickets')
+    .update(updatePayload)
+    .eq('id', ticketId)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  // Log status history
+  await supabase.from('ticket_status_history').insert([{
+    ticket_id: ticketId,
+    old_status: currentTicket?.status,
+    new_status: newTicketStatus,
+    changed_by: userData.user.id
+  }]);
+
+  // Log activity
+  await supabase.from('activity_logs').insert([{
+    ticket_id: ticketId,
+    action: `DevOps: ${devopsStatus}${details?.remarks ? ' — ' + details.remarks : ''}`,
+    performed_by: userData.user.id
+  }]);
+
+  // Notify the ticket creator
+  const { data: ticket } = await supabase
+    .from('tickets')
+    .select('*, employee:profiles!employee_id(name, email)')
+    .eq('id', ticketId)
+    .single();
+
+  if (ticket?.employee_id) {
+    await supabase.from('notifications').insert([{
+      user_id: ticket.employee_id,
+      type: 'DEVOPS_UPDATE',
+      title: `DevOps Update: ${devopsStatus}`,
+      message: `Your request "${ticket.title}" has been updated to ${devopsStatus}.`,
+      severity: devopsStatus === 'Error' || devopsStatus === 'Rejected' ? 'Warning' : 'Info',
+      ticket_id: ticketId
+    }]);
+
+    // Send confirmation email via Webhook
+    const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL;
+    if (googleWebhookUrl) {
+      fetch(googleWebhookUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        body: JSON.stringify({
+          type: 'devops_confirmation',
+          ticket_id: ticketId,
+          title: ticket.title,
+          requester_name: ticket.employee?.name || 'User',
+          requester_email: ticket.employee?.email,
+          devops_status: devopsStatus,
+          remarks: details?.remarks || 'No additional remarks.',
+          error_logs: details?.error_logs || '',
+          app_url: window.location.origin + `/tickets/${ticketId}`
+        })
+      }).catch(console.error);
+    }
+  }
+
+  return data;
+};
+
+export const resubmitForDevOps = async (ticketId: string, remarks: string) => {
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) throw new Error('Not authenticated');
+
+  // Fetch current ticket to get custom_fields
+  const { data: ticket } = await supabase.from('tickets').select('custom_fields').eq('id', ticketId).single();
+  const existingFields = ticket?.custom_fields || {};
+  const lastDevOpsAgent = existingFields.devops_updated_by;
+
+  const { data, error } = await supabase
+    .from('tickets')
+    .update({
+      status: 'Open',
+      assigned_to: lastDevOpsAgent || null,
+      custom_fields: {
+        ...existingFields,
+        devops_status: 'Resubmitted'
+      },
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', ticketId)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  await supabase.from('activity_logs').insert([{
+    ticket_id: ticketId,
+    action: `User resubmitted for deployment after fixing error. ${remarks ? 'Note: ' + remarks : ''}`,
+    performed_by: userData.user.id
+  }]);
 
   return data;
 };
@@ -615,20 +804,24 @@ export const createSubscription = async (subData: any) => {
     .from('subscriptions')
     .insert([{
       ...subData,
-      owner_id: userData.user.id
+      owner_id: subData.owner_id || userData.user.id
     }])
     .select()
     .single();
 
   if (error) throw error;
 
-  // Create Calendar Reminder for Subscription
-  if (data.next_due_date) {
-    createReminderEvent(
-      `Renew Subscription: ${data.service_name}`,
-      data.next_due_date,
-      `Reminder to renew ${data.service_name} (${data.billing_cycle}) for $${data.cost}`
-    );
+  // Notify Admin via Webhook
+  const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL;
+  if (googleWebhookUrl) {
+    fetch(googleWebhookUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      body: JSON.stringify({
+        type: 'subscription_added',
+        ...data
+      })
+    }).catch(console.error);
   }
 
   return data;
@@ -649,7 +842,7 @@ export const updateSubscription = async (id: string, updates: any) => {
     createReminderEvent(
       `Renew Subscription: ${data.service_name}`,
       data.next_due_date,
-      `Reminder to renew ${data.service_name} (${data.billing_cycle}) for $${data.cost}`
+      `Reminder to renew ${data.service_name} (${data.billing_cycle}) for \u20b9${data.cost}`
     );
   }
 

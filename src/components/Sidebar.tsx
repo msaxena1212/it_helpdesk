@@ -66,21 +66,23 @@ export const Sidebar = () => {
   const isSuper = role === 'superadmin' || user?.email === 'superadmin@elitemindz.co';
 
   const mainLinks = [
-    { name: role === 'employee' ? 'ESS Portal' : (isSuper ? 'Master Console' : (role === 'devops' ? 'DevOps Control' : 'Dashboard')), path: '/', icon: LayoutDashboard },
+    { name: role === 'employee' ? 'ESS Portal' : (isSuper ? 'Master Console' : (role === 'devops' ? 'DevOps Control' : (role === 'inventory_manager' ? 'Inventory Manager' : 'Dashboard'))), path: '/', icon: LayoutDashboard },
+    ...(role !== 'employee' ? [{ name: 'ESS Portal', path: '/ess', icon: LayoutDashboard }] : []),
     { name: 'Tickets', path: '/tickets', icon: Ticket },
-    { name: 'Kanban', path: '/kanban', icon: Columns3 },
-    { name: 'Analytics', path: '/analytics', icon: BarChart3 },
+    ...(isSuper || role === 'admin' ? [
+      { name: 'Kanban', path: '/kanban', icon: Columns3 },
+      { name: 'Analytics', path: '/analytics', icon: BarChart3 }
+    ] : []),
     ...(isSuper || role === 'admin' ? [{ name: 'Subscriptions', path: '/subscriptions', icon: DollarSign }] : []),
     ...(isSuper || role === 'inventory_manager' ? [{ name: 'Inventory Requests', path: '/inventory', icon: Package }] : []),
-    ...(isSuper || role === 'devops' ? [{ name: 'GitLab & Deploy', path: '/tickets', icon: Monitor }] : []),
   ];
 
 
-  const assetLinks = [
+  const assetLinks = (isSuper || role === 'admin' || role === 'inventory_manager') ? [
     { name: 'Assets Inventory', path: '/assets', icon: Monitor },
     { name: 'Asset Audit', path: '/assets/audit', icon: History },
     { name: 'Audit Session', path: '/assets/audit-session', icon: ClipboardCheck },
-  ];
+  ] : [];
 
   const systemLinks = [
     ...(isSuper || role === 'admin' ? [{ name: 'Team Management', path: '/admin', icon: Users }] : []),
@@ -131,8 +133,12 @@ export const Sidebar = () => {
         <p style={{ color: '#88929b', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, margin: '8px 0 4px 8px' }}>Menu</p>
         {mainLinks.map((link) => <NavItem key={link.path} link={link} />)}
 
-        <p style={{ color: '#88929b', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, margin: '16px 0 4px 8px' }}>Asset Management</p>
-        {assetLinks.map((link) => <NavItem key={link.path} link={link} />)}
+        {(isSuper || role === 'admin' || role === 'inventory_manager') && (
+          <>
+            <p style={{ color: '#88929b', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, margin: '16px 0 4px 8px' }}>Asset Management</p>
+            {assetLinks.map((link) => <NavItem key={link.path} link={link} />)}
+          </>
+        )}
 
         <p style={{ color: '#88929b', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, margin: '16px 0 4px 8px' }}>System</p>
         {systemLinks.map((link) => <NavItem key={link.path} link={link} />)}

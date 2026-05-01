@@ -43,7 +43,7 @@ export const SubscriptionsHub = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
-    service_name: '', cost: '', billing_cycle: 'Monthly', next_due_date: '', owner_id: '', status: 'Active'
+    service_name: '', cost: '', billing_cycle: 'Monthly', next_due_date: '', owner_id: '', status: 'Active', comment: ''
   });
 
   useEffect(() => {
@@ -53,14 +53,16 @@ export const SubscriptionsHub = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [subs, usrs] = await Promise.all([
-        getSubscriptions(),
-        getAllUsers()
-      ]);
+      const subs = await getSubscriptions();
       setSubscriptions(subs || []);
+    } catch (e) {
+      console.error('Failed to load subscriptions:', e);
+    }
+    try {
+      const usrs = await getAllUsers();
       setUsers(usrs || []);
     } catch (e) {
-      console.error(e);
+      console.error('Failed to load users:', e);
     }
     setLoading(false);
   };
@@ -73,14 +75,15 @@ export const SubscriptionsHub = () => {
       billing_cycle: sub.billing_cycle,
       next_due_date: sub.next_due_date,
       owner_id: sub.owner_id || '',
-      status: sub.status
+      status: sub.status,
+      comment: sub.comment || ''
     });
     setShowModal(true);
   };
 
   const handleAddNew = () => {
     setEditingId(null);
-    setFormData({ service_name: '', cost: '', billing_cycle: 'Monthly', next_due_date: '', owner_id: '', status: 'Active' });
+    setFormData({ service_name: '', cost: '', billing_cycle: 'Monthly', next_due_date: '', owner_id: '', status: 'Active', comment: '' });
     setShowModal(true);
   };
 
@@ -92,7 +95,8 @@ export const SubscriptionsHub = () => {
         billing_cycle: formData.billing_cycle,
         next_due_date: formData.next_due_date,
         owner_id: formData.owner_id || null,
-        status: formData.status
+        status: formData.status,
+        comment: formData.comment || null
       };
       
       if (editingId) {
@@ -168,7 +172,7 @@ export const SubscriptionsHub = () => {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'rgba(14,165,233,0.04)' }}>
-                {['Service', 'Owner', 'Cost', 'Cycle', 'Next Due', 'Status', 'Actions'].map(h => (
+                {['Service', 'Owner', 'Cost', 'Cycle', 'Next Due', 'Status', 'Comment', 'Actions'].map(h => (
                   <th key={h} style={{ padding: '12px 24px', textAlign: 'left', fontSize: '0.68rem', fontWeight: 700, color: DS.muted, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{h}</th>
                 ))}
               </tr>
@@ -185,10 +189,11 @@ export const SubscriptionsHub = () => {
                     </div>
                   </td>
                   <td style={{ padding: '16px 24px', color: DS.muted, fontSize: '0.8rem' }}>{s.owner?.name || 'Unassigned'}</td>
-                  <td style={{ padding: '16px 24px', color: '#4ade80', fontWeight: 800, fontSize: '0.875rem' }}>${s.cost}</td>
+                  <td style={{ padding: '16px 24px', color: '#4ade80', fontWeight: 800, fontSize: '0.875rem' }}>₹{s.cost}</td>
                   <td style={{ padding: '16px 24px', color: DS.muted, fontSize: '0.8rem' }}>{s.billing_cycle}</td>
                   <td style={{ padding: '16px 24px', color: DS.text, fontSize: '0.8rem', fontWeight: 600 }}>{s.next_due_date}</td>
                   <td style={{ padding: '16px 24px' }}><Badge status={s.status} /></td>
+                  <td style={{ padding: '16px 24px', color: DS.muted, fontSize: '0.75rem', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.comment}>{s.comment || '—'}</td>
                   <td style={{ padding: '16px 24px' }}>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button onClick={() => handleRenew(s.id, s.next_due_date, s.billing_cycle)} style={{ background: 'rgba(74,222,128,0.1)', color: '#4ade80', border: 'none', borderRadius: '8px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
@@ -226,7 +231,7 @@ export const SubscriptionsHub = () => {
                   <input type="text" value={formData.service_name} onChange={e => setFormData({ ...formData, service_name: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }} />
                 </div>
                 <div>
-                  <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Cost ($)</label>
+                  <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Cost (₹)</label>
                   <input type="number" value={formData.cost} onChange={e => setFormData({ ...formData, cost: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }} />
                 </div>
                 <div style={{ display: 'flex', gap: '12px' }}>
@@ -255,6 +260,10 @@ export const SubscriptionsHub = () => {
                       <option>Active</option><option>Cancelled</option>
                     </select>
                   </div>
+                </div>
+                <div>
+                  <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Comment (Optional / Discontinuation Reason)</label>
+                  <textarea value={formData.comment} onChange={e => setFormData({ ...formData, comment: e.target.value })} rows={2} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px', resize: 'none' }} />
                 </div>
 
                 <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>

@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
+import { CalendarView, MiniCalendar, CalendarEvent } from '../components/CalendarView';
 
 const DS = {
   bg: '#0f172a', card: '#131b2e', cardHigh: '#1e293b',
@@ -23,6 +24,7 @@ export const InventoryDashboard = () => {
   const [search, setSearch] = useState('');
   const [updating, setUpdating] = useState(false);
   const [filterMode, setFilterMode] = useState<'Active' | 'Completed'>('Active');
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
 
   const [selectedTicket, setSelectedTicket] = useState<any>(null);
   const [showProcModal, setShowProcModal] = useState(false);
@@ -65,7 +67,17 @@ export const InventoryDashboard = () => {
         return !isProcCompleted;
       });
 
-      setTickets(finalData);
+       setTickets(finalData);
+
+      // Prepare calendar events
+      const events: CalendarEvent[] = (data || []).filter(t => t.procurement_expected_date && t.procurement_status !== 'Completed').map(t => ({
+        id: t.id,
+        date: new Date(t.procurement_expected_date),
+        title: `🚚 ${t.title}`,
+        type: 'leave' as const, // Reusing color logic
+        color: '#ffb86e'
+      }));
+      setCalendarEvents(events);
     } catch (e) {
       console.error(e);
     } finally {
@@ -111,46 +123,70 @@ export const InventoryDashboard = () => {
   );
 
   return (
-    <div style={{ minHeight: '100vh', background: DS.bg, color: DS.text, padding: '32px', fontFamily: "'Inter', sans-serif" }}>
+    <>
+      <div style={{ minHeight: '100vh', background: DS.bg, color: DS.text, padding: '32px', fontFamily: "'Inter', sans-serif" }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
         
         {/* Contextual Awareness: Budget & Logistics */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '24px', marginBottom: '32px' }}>
-          <div style={{ background: 'rgba(74,222,128,0.05)', borderRadius: '24px', padding: '24px', border: '1px solid rgba(74,222,128,0.1)' }}>
-            <h3 style={{ fontSize: '0.875rem', fontWeight: 800, color: '#4ade80', textTransform: 'uppercase', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <ShoppingCart size={18} /> Procurement Budget
-            </h3>
-            <p style={{ fontSize: '0.75rem', color: DS.muted, marginBottom: '4px' }}>Active Requests Total</p>
-            <h2 style={{ fontSize: '2.5rem', fontWeight: 800, color: DS.text }}>
-              ₹ {tickets.reduce((acc, t) => acc + (parseFloat(t.procurement_cost) || 0), 0).toLocaleString()}
-            </h2>
-            <p style={{ fontSize: '0.7rem', color: DS.muted, marginTop: '8px' }}>Tracking across {tickets.length} active inventory tickets.</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 280px', gap: '20px', marginBottom: '32px' }}>
+          <div style={{ background: 'rgba(74,222,128,0.03)', borderRadius: '24px', padding: '24px', border: '1px solid rgba(74,222,128,0.1)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '16px' }}>
+            <div>
+              <h3 style={{ fontSize: '0.75rem', fontWeight: 800, color: '#4ade80', textTransform: 'uppercase', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', letterSpacing: '0.05em' }}>
+                <ShoppingCart size={16} /> Procurement Budget
+              </h3>
+              <p style={{ fontSize: '0.7rem', color: DS.muted, marginBottom: '2px' }}>Active Requests Total</p>
+              <h2 style={{ fontSize: '2.25rem', fontWeight: 800, color: DS.text, letterSpacing: '-0.02em' }}>
+                ₹ {tickets.reduce((acc, t) => acc + (parseFloat(t.procurement_cost) || 0), 0).toLocaleString()}
+              </h2>
+              <p style={{ fontSize: '0.65rem', color: DS.muted, marginTop: '8px' }}>Tracking across {tickets.length} active inventory tickets.</p>
+            </div>
+
+            {tickets.some(t => t.status === 'Waiting for User' && t.employee_id === profile?.id) && (
+              <div style={{ background: 'rgba(255,184,110,0.05)', borderRadius: '16px', padding: '16px', border: '1px solid rgba(255,184,110,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Clock size={16} color="#ffb86e" />
+                  <div>
+                    <p style={{ fontSize: '0.75rem', fontWeight: 800, color: '#ffb86e', margin: 0 }}>Action Required</p>
+                    <p style={{ fontSize: '0.65rem', color: DS.muted, margin: 0 }}>Ticket waiting for your response</p>
+                  </div>
+                </div>
+                <button onClick={() => navigate('/ess')} style={{ background: '#ffb86e', color: '#000', border: 'none', borderRadius: '8px', padding: '6px 12px', fontSize: '0.65rem', fontWeight: 800, cursor: 'pointer' }}>Review</button>
+              </div>
+            )}
           </div>
 
-          <div style={{ background: DS.card, borderRadius: '24px', padding: '24px', border: `1px solid ${DS.border}` }}>
-            <h3 style={{ fontSize: '0.875rem', fontWeight: 800, color: DS.text, textTransform: 'uppercase', marginBottom: '16px' }}>Logistics Quick Links</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+          <div style={{ background: DS.card, borderRadius: '24px', padding: '24px', border: `1px solid ${DS.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <h3 style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.text, textTransform: 'uppercase', marginBottom: '16px', letterSpacing: '0.05em' }}>Logistics Quick Links</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
               {[
                 { name: 'Amazon Business', icon: Truck },
                 { name: 'Local Vendors', icon: Users },
                 { name: 'Stock Audit', icon: Package }
               ].map(link => (
-                <div key={link.name} style={{ background: DS.surface, padding: '12px', borderRadius: '14px', border: `1px solid ${DS.border}`, textAlign: 'center', cursor: 'pointer' }}>
-                  <link.icon size={18} color={DS.primary} style={{ margin: '0 auto 8px' }} />
-                  <p style={{ fontSize: '0.7rem', color: DS.text, fontWeight: 700 }}>{link.name}</p>
+                <div key={link.name} style={{ background: DS.surface, padding: '12px 8px', borderRadius: '16px', border: `1px solid ${DS.border}`, textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s' }} onMouseEnter={e => e.currentTarget.style.borderColor = DS.primary} onMouseLeave={e => e.currentTarget.style.borderColor = DS.border}>
+                  <link.icon size={16} color={DS.primary} style={{ margin: '0 auto 8px' }} />
+                  <p style={{ fontSize: '0.65rem', color: DS.text, fontWeight: 700 }}>{link.name}</p>
                 </div>
               ))}
             </div>
           </div>
+
+          <div style={{ display: 'flex', alignItems: 'stretch' }}>
+            <MiniCalendar events={calendarEvents} />
+          </div>
         </div>
 
-        <header style={{ marginBottom: '40px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-            <Package color={DS.primary} size={24} />
-            <span style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.primary, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Supply Chain Control</span>
+        <header style={{ marginBottom: '32px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                <Package color={DS.primary} size={20} />
+                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.primary, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Supply Chain Control</span>
+              </div>
+              <h1 style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.02em' }}>Inventory Management</h1>
+              <p style={{ color: DS.muted, fontSize: '0.9rem' }}>Manage and procure components required for active service tickets.</p>
+            </div>
           </div>
-          <h1 style={{ fontSize: '2.5rem', fontWeight: 800, letterSpacing: '-0.02em' }}>Inventory Management</h1>
-          <p style={{ color: DS.muted, fontSize: '1rem' }}>Manage and procure components required for active service tickets.</p>
         </header>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '32px' }}>
@@ -208,7 +244,9 @@ export const InventoryDashboard = () => {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
                     <span style={{ fontSize: '0.65rem', fontWeight: 800, background: 'rgba(14,165,233,0.1)', color: DS.primary, padding: '4px 8px', borderRadius: '4px' }}>#{ticket.id.substring(0,8).toUpperCase()}</span>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: DS.muted }}>{ticket.employee?.name || 'Guest User'}</span>
+                    {(ticket.employee?.name || ticket.guest_name || 'Guest') !== (profile?.name || user?.user_metadata?.name || user?.email?.split('@')[0]) && (
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: DS.muted }}>{ticket.employee?.name || 'Guest User'}</span>
+                    )}
                   </div>
                   <h4 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '6px' }}>{ticket.title}</h4>
                   <p style={{ fontSize: '0.85rem', color: DS.muted, fontStyle: 'italic' }}>" {ticket.inventory_remarks} "</p>
@@ -271,6 +309,7 @@ export const InventoryDashboard = () => {
               <p style={{ color: DS.muted, fontSize: '0.9rem' }}>All parts have been procured and handed over.</p>
             </div>
           )}
+          </div>
         </div>
       </div>
 
@@ -372,6 +411,6 @@ export const InventoryDashboard = () => {
           </div>
         )}
       </AnimatePresence>
-    </div>
+    </>
   );
 };

@@ -76,6 +76,7 @@ function AppRoutes() {
       
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="/" element={renderDashboard()} />
+        <Route path="/ess" element={<EmployeeDashboard />} />
         <Route path="/tickets" element={<TicketList />} />
         <Route path="/admin" element={<SuperAdminDashboard />} />
         <Route path="/dashboard" element={<AdminDashboard />} />
@@ -89,7 +90,8 @@ function AppRoutes() {
         <Route path="/tickets/new" element={<CreateTicket />} />
         <Route path="/tickets/:id" element={<TicketDetail />} />
         <Route path="/inventory" element={<InventoryDashboard />} />
-        <Route path="/subscriptions" element={<SubscriptionsHub />} />
+        <Route path="/devops" element={<DevOpsDashboard />} />
+        <Route path="/subscriptions" element={(userRole === 'admin' || userRole === 'superadmin') ? <SubscriptionsHub /> : <Navigate to="/" replace />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

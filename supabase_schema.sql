@@ -169,13 +169,19 @@ alter table assets enable row level security;
 alter table asset_history enable row level security;
 alter table notifications enable row level security;
 
+-- Helper function to avoid recursion in RLS
+create or replace function public.get_user_role()
+returns text as $$
+  select role from public.profiles where id = auth.uid();
+$$ language sql security definer;
+
 -- Policies: Profiles
 drop policy if exists "Profiles are viewable by authenticated users" on profiles;
 drop policy if exists "Users can update own profile" on profiles;
 drop policy if exists "Superadmins can manage all profiles" on profiles;
 create policy "Profiles are viewable by authenticated users" on profiles for select using (auth.role() = 'authenticated');
 create policy "Users can update own profile" on profiles for update using (auth.uid() = id);
-create policy "Superadmins can manage all profiles" on profiles for all using (exists (select 1 from profiles where id = auth.uid() and role = 'superadmin'));
+create policy "Superadmins can manage all profiles" on profiles for all using (get_user_role() = 'superadmin');
 
 -- Policies: Assets & History
 drop policy if exists "Assets are viewable by authenticated users" on assets;
@@ -183,22 +189,26 @@ drop policy if exists "Admins can manage assets" on assets;
 drop policy if exists "Asset history viewable by authenticated" on asset_history;
 drop policy if exists "Admins can insert asset history" on asset_history;
 create policy "Assets are viewable by authenticated users" on assets for select using (auth.role() = 'authenticated');
-create policy "Admins can manage assets" on assets for all using (exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'superadmin', 'inventory_manager')));
+create policy "Admins can manage assets" on assets for all using (get_user_role() in ('admin', 'superadmin', 'inventory_manager'));
 create policy "Asset history viewable by authenticated" on asset_history for select using (auth.role() = 'authenticated');
-create policy "Admins can insert asset history" on asset_history for insert with check (exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'superadmin', 'inventory_manager')));
+create policy "Admins can insert asset history" on asset_history for insert with check (get_user_role() in ('admin', 'superadmin', 'inventory_manager'));
 
 -- Policies: Tickets
 drop policy if exists "Employees can view own tickets" on tickets;
 drop policy if exists "Admins and Managers can view all tickets" on tickets;
 drop policy if exists "Public can insert guest tickets" on tickets;
 drop policy if exists "Admins and Managers can update tickets" on tickets;
+drop policy if exists "Employees can update own tickets" on tickets;
+
 create policy "Employees can view own tickets" on tickets for select using (auth.uid() = employee_id);
-create policy "Admins and Managers can view all tickets" on tickets for select using (exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'superadmin', 'inventory_manager')));
-create policy "Admins and Managers can update tickets" on tickets for update using (exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'superadmin', 'inventory_manager')));
+create policy "Admins and Managers can view all tickets" on tickets for select using (get_user_role() in ('admin', 'superadmin', 'inventory_manager', 'devops'));
+create policy "Admins and Managers can update tickets" on tickets for update using (get_user_role() in ('admin', 'superadmin', 'inventory_manager', 'devops'));
+create policy "Employees can update own tickets" on tickets for update using (auth.uid() = employee_id);
+
 create policy "Public can insert guest tickets" on tickets for insert with check (
   (auth.uid() is null and employee_id is null) or 
   (auth.uid() = employee_id) or
-  (exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'superadmin', 'inventory_manager')))
+  (get_user_role() in ('admin', 'superadmin', 'inventory_manager', 'devops'))
 );
 
 -- Policies: Comments & Notes
@@ -208,8 +218,8 @@ drop policy if exists "Admins can view internal notes" on internal_notes;
 drop policy if exists "Admins can insert internal notes" on internal_notes;
 create policy "Users can view comments" on ticket_comments for select using (exists (select 1 from tickets where id = ticket_id));
 create policy "Users can insert comments" on ticket_comments for insert with check (auth.uid() = user_id);
-create policy "Admins can view internal notes" on internal_notes for select using (exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'superadmin')));
-create policy "Admins can insert internal notes" on internal_notes for insert with check (exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'superadmin')));
+create policy "Admins can view internal notes" on internal_notes for select using (get_user_role() in ('admin', 'superadmin', 'devops'));
+create policy "Admins can insert internal notes" on internal_notes for insert with check (get_user_role() in ('admin', 'superadmin', 'devops'));
 
 -- Seed Initial SLA Data
 insert into sla_config (department, priority, resolution_hours) values

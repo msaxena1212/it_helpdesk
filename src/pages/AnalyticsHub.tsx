@@ -152,7 +152,7 @@ export const AnalyticsHub = () => {
       Status: t.status,
       Priority: t.priority,
       'Issue Type': t.issue_type || 'Other',
-      'SLA Deadline': new Date(t.sla_deadline).toLocaleString(),
+      'SLA Deadline': t.sla_deadline ? new Date(t.sla_deadline).toLocaleString() : 'N/A',
       'SLA Breached': t.sla_breached ? 'YES' : 'No',
       'Escalation Level': t.escalation_level || 0,
       'Assigned Agent': t.assigned?.name || 'Unassigned',
@@ -196,8 +196,8 @@ export const AnalyticsHub = () => {
       Title: t.title,
       Priority: t.priority,
       'Escalation Level': t.escalation_level || 0,
-      'Deadline': new Date(t.sla_deadline).toLocaleString(),
-      'Hours Overdue': `${((Date.now() - new Date(t.sla_deadline).getTime()) / (1000*60*60)).toFixed(1)}h`,
+      'Deadline': t.sla_deadline ? new Date(t.sla_deadline).toLocaleString() : 'N/A',
+      'Hours Overdue': t.sla_deadline ? `${((Date.now() - new Date(t.sla_deadline).getTime()) / (1000*60*60)).toFixed(1)}h` : 'N/A',
       Status: t.status,
     }));
     const wsSLA = utils.json_to_sheet(slaRows.length > 0 ? slaRows : [{ Note: 'No SLA breaches — great work!' }]);
