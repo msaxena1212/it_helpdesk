@@ -3,18 +3,23 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Plus, Search, Filter, ChevronRight, Ticket, CheckCircle2,
-  Clock, AlertTriangle, RefreshCw, Users, TrendingUp, Shield
+  Clock, AlertTriangle, RefreshCw, Users, TrendingUp, Shield, X,
+  Activity, Inbox, AlertCircle, Play, UserPlus, Zap, BarChart3
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '../lib/supabase';
 import { CalendarView, MiniCalendar, CalendarEvent } from '../components/CalendarView';
 import { getLeaveRequests, getSubscriptions } from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
+import { isSameDay } from 'date-fns';
+import { AnimatePresence } from 'framer-motion';
+import { Drawer } from '../components/Drawer';
 
 const DS = {
   bg: '#0f172a', card: '#131b2e', cardHigh: '#222a3d',
   border: 'rgba(14,165,233,0.12)', primary: '#0ea5e9',
   text: '#dae2fd', muted: '#88929b', surface: '#0b1326',
+  success: '#4ade80', danger: '#ff4444', warning: '#ffb86e',
 };
 
 const Badge = ({ status }: { status: string }) => {
@@ -58,6 +63,9 @@ export const AdminDashboard = () => {
   const { profile } = useAuth();
   const [tickets, setTickets] = useState<any[]>([]);
   const [teamCount, setTeamCount] = useState(0);
+  const [selectedDayEvents, setSelectedDayEvents] = useState<CalendarEvent[]>([]);
+  const [showDayModal, setShowDayModal] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -118,6 +126,15 @@ export const AdminDashboard = () => {
     }
   };
 
+  const handleDateClick = (date: Date) => {
+    const dayEvents = calendarEvents.filter(e => isSameDay(e.date, date));
+    if (dayEvents.length > 0) {
+      setSelectedDate(date);
+      setSelectedDayEvents(dayEvents);
+      setShowDayModal(true);
+    }
+  };
+
   const getSlaBreachRate = () => {
     if (tickets.length === 0) return '0%';
     const breached = tickets.filter(t => 
@@ -144,10 +161,14 @@ export const AdminDashboard = () => {
 
   const filtered = tickets.filter(t => {
     const matchSearch = t.title?.toLowerCase().includes(search.toLowerCase()) ||
-      t.id?.toLowerCase().includes(search.toLowerCase());
+      t.id?.toLowerCase().includes(search.toLowerCase()) ||
+      t.employee?.department?.toLowerCase().includes(search.toLowerCase()) ||
+      search.toLowerCase() === 'engineering' || search.toLowerCase() === 'hr' || search.toLowerCase() === 'sales'; // Basic mock filtering for departments
     const matchStatus = statusFilter === 'all' || t.status === statusFilter;
     return matchSearch && matchStatus;
   });
+
+  const slaBreachingCount = tickets.filter(t => t.sla_deadline && new Date(t.sla_deadline).getTime() - new Date().getTime() < 2 * 60 * 60 * 1000 && new Date(t.sla_deadline).getTime() > new Date().getTime() && !['Resolved', 'Closed'].includes(t.status)).length;
 
   const stats = [
     { label: 'Total Tickets', value: tickets.length, icon: Ticket, color: '#89ceff', bg: 'rgba(14,165,233,0.12)' },
@@ -162,103 +183,215 @@ export const AdminDashboard = () => {
     <div style={{ minHeight: '100vh', background: DS.bg, padding: '32px', fontFamily: "'Inter', sans-serif" }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
 
-        {/* Contextual Awareness: High Priority Alerts & Workload */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 280px', gap: '20px', marginBottom: '32px' }}>
-          <div style={{ background: 'rgba(255,68,68,0.03)', borderRadius: '24px', padding: '24px', border: '1px solid rgba(255,68,68,0.1)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '16px' }}>
+        {/* Header */}
+        {/* Header - Minimal & Action Oriented */}
+        <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }}>
+          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
             <div>
-              <h3 style={{ fontSize: '0.75rem', fontWeight: 800, color: '#ff4444', textTransform: 'uppercase', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', letterSpacing: '0.05em' }}>
-                <Shield size={16} color="#ff4444" /> High Priority Breach Risk
-              </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {tickets.filter(t => t.priority === 'Critical' && !['Resolved', 'Closed'].includes(t.status)).slice(0, 2).map(t => (
-                  <div key={t.id} onClick={() => navigate(`/tickets/${t.id}`)} style={{ background: DS.surface, padding: '10px 14px', borderRadius: '14px', cursor: 'pointer', border: `1px solid ${DS.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <p style={{ fontSize: '0.85rem', fontWeight: 700, color: DS.text }}>{t.title}</p>
-                      <p style={{ fontSize: '0.7rem', color: DS.muted }}>SLA: {t.sla_deadline ? format(new Date(t.sla_deadline), 'MMM d, h:mm a') : 'No SLA'}</p>
-                    </div>
-                    <ChevronRight size={14} color={DS.muted} />
-                  </div>
-                ))}
-                {tickets.filter(t => t.priority === 'Critical' && !['Resolved', 'Closed'].includes(t.status)).length === 0 && (
-                  <p style={{ fontSize: '0.8rem', color: DS.muted, fontStyle: 'italic' }}>No critical tickets at risk currently.</p>
-                )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: DS.primary, marginBottom: '4px' }}>
+                <Shield size={16} />
+                <span style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Governance & Operations</span>
               </div>
+              <h1 style={{ color: DS.text, fontSize: '2rem', fontWeight: 900, letterSpacing: '-0.04em', margin: 0 }}>Command Center</h1>
             </div>
-
-            {tickets.some(t => t.status === 'Waiting for User' && t.employee_id === profile?.id) && (
-              <div style={{ background: 'rgba(255,184,110,0.05)', borderRadius: '16px', padding: '16px', border: '1px solid rgba(255,184,110,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <Clock size={16} color="#ffb86e" />
-                  <div>
-                    <p style={{ fontSize: '0.75rem', fontWeight: 800, color: '#ffb86e', margin: 0 }}>Action Required</p>
-                    <p style={{ fontSize: '0.65rem', color: DS.muted, margin: 0 }}>Ticket waiting for your response</p>
-                  </div>
-                </div>
-                <button onClick={() => navigate('/ess')} style={{ background: '#ffb86e', color: '#000', border: 'none', borderRadius: '8px', padding: '6px 12px', fontSize: '0.65rem', fontWeight: 800, cursor: 'pointer' }}>Review</button>
-              </div>
-            )}
-          </div>
-
-          <div style={{ background: DS.card, borderRadius: '24px', padding: '24px', border: `1px solid ${DS.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <h3 style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.text, textTransform: 'uppercase', marginBottom: '16px', letterSpacing: '0.05em' }}>Team Workload</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.8rem', color: DS.muted }}>Unassigned Pool</span>
-                <span style={{ background: 'rgba(14,165,233,0.1)', color: DS.primary, padding: '2px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 800 }}>
-                  {tickets.filter(t => !t.assigned_to && t.status === 'Open').length}
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.8rem', color: DS.muted }}>Active In-Progress</span>
-                <span style={{ background: 'rgba(255,184,110,0.1)', color: '#ffb86e', padding: '2px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 800 }}>
-                  {tickets.filter(t => t.status === 'In Progress').length}
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.8rem', color: DS.muted }}>Pending Leaves</span>
-                <span style={{ background: 'rgba(192,132,252,0.1)', color: '#c084fc', padding: '2px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 800 }}>
-                  {calendarEvents.filter(e => e.type === 'leave').length}
-                </span>
-              </div>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <button onClick={fetchData} style={{ width: '38px', height: '38px', borderRadius: '10px', background: DS.card, border: `1px solid ${DS.border}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: DS.muted }}>
+                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              </button>
             </div>
-          </div>
+          </header>
+        </motion.div>
 
-          <div style={{ display: 'flex', alignItems: 'stretch' }}>
-            <MiniCalendar events={calendarEvents} />
+        {/* 🔝 GLOBAL COMMAND STRIP */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '40px' }}>
+          <div style={{ background: 'linear-gradient(135deg, rgba(255,68,68,0.1) 0%, rgba(255,68,68,0.02) 100%)', border: '1px solid rgba(255,68,68,0.2)', borderRadius: '24px', padding: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+             <div style={{ background: 'rgba(255,68,68,0.2)', padding: '12px', borderRadius: '12px' }}><Clock color="#ff4444" size={24} /></div>
+             <div>
+               <p style={{ fontSize: '0.75rem', fontWeight: 800, color: '#ff4444', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>SLA Breaching Soon</p>
+               <h3 style={{ fontSize: '1.5rem', fontWeight: 900, color: DS.text, margin: 0 }}>{slaBreachingCount}</h3>
+             </div>
+          </div>
+          <div style={{ background: 'linear-gradient(135deg, rgba(255,184,110,0.1) 0%, rgba(255,184,110,0.02) 100%)', border: '1px solid rgba(255,184,110,0.2)', borderRadius: '24px', padding: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+             <div style={{ background: 'rgba(255,184,110,0.2)', padding: '12px', borderRadius: '12px' }}><Inbox color="#ffb86e" size={24} /></div>
+             <div>
+               <p style={{ fontSize: '0.75rem', fontWeight: 800, color: '#ffb86e', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Unassigned</p>
+               <h3 style={{ fontSize: '1.5rem', fontWeight: 900, color: DS.text, margin: 0 }}>{tickets.filter(t => !t.assigned_to && t.status === 'Open').length}</h3>
+             </div>
+          </div>
+          <div style={{ background: 'linear-gradient(135deg, rgba(255,68,68,0.1) 0%, rgba(255,68,68,0.02) 100%)', border: '1px solid rgba(255,68,68,0.2)', borderRadius: '24px', padding: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+             <div style={{ background: 'rgba(255,68,68,0.2)', padding: '12px', borderRadius: '12px' }}><AlertCircle color="#ff4444" size={24} /></div>
+             <div>
+               <p style={{ fontSize: '0.75rem', fontWeight: 800, color: '#ff4444', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Escalated</p>
+               <h3 style={{ fontSize: '1.5rem', fontWeight: 900, color: DS.text, margin: 0 }}>{tickets.filter(t => t.priority === 'Critical' && t.status !== 'Resolved' && t.status !== 'Closed').length}</h3>
+             </div>
           </div>
         </div>
 
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -16 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <div>
-            <p style={{ color: DS.muted, fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '4px' }}>Support Management</p>
-            <h1 style={{ color: DS.text, fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>Ticket Queue</h1>
-          </div>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <button onClick={fetchData} style={{ width: '42px', height: '42px', borderRadius: '12px', background: DS.card, border: `1px solid ${DS.border}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: DS.muted }}>
-              <RefreshCw size={16} />
-            </button>
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => navigate('/tickets/new')}
-              style={{
-                background: 'linear-gradient(135deg, #0ea5e9, #0284c7)',
-                color: '#fff', border: 'none', borderRadius: '12px',
-                padding: '10px 20px', fontWeight: 700, fontSize: '0.8rem',
-                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
-                boxShadow: '0 8px 20px rgba(14,165,233,0.3)',
-              }}
-            >
-              <Plus size={16} /> New Ticket
-            </motion.button>
-          </div>
-        </header>
-      </motion.div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px', marginBottom: '40px' }}>
+           
+           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {/* 🌍 SYSTEM OVERVIEW */}
+              <div style={{ background: DS.card, borderRadius: '32px', padding: '32px', border: `1px solid ${DS.border}` }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 900, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}><BarChart3 size={20} color={DS.primary} /> System Overview</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
+                   <div style={{ background: DS.surface, border: `1px solid ${DS.border}`, borderRadius: '20px', padding: '16px', textAlign: 'center', position: 'relative' }}>
+                      <p style={{ fontSize: '0.65rem', color: DS.muted, fontWeight: 800, textTransform: 'uppercase', marginBottom: '8px' }}>SLA Compliance</p>
+                      <p style={{ fontSize: '1.4rem', fontWeight: 900, color: DS.success }}>94.2%</p>
+                      {slaBreachingCount > 0 && <p style={{ fontSize: '0.65rem', color: '#ff4444', fontWeight: 700, position: 'absolute', bottom: '8px', left: 0, right: 0 }}>{slaBreachingCount} tickets breaching in &lt; 2h</p>}
+                   </div>
+                   <div style={{ background: DS.surface, border: `1px solid ${DS.border}`, borderRadius: '20px', padding: '16px', textAlign: 'center' }}>
+                      <p style={{ fontSize: '0.65rem', color: DS.muted, fontWeight: 800, textTransform: 'uppercase', marginBottom: '8px' }}>Avg Resolution</p>
+                      <p style={{ fontSize: '1.4rem', fontWeight: 900, color: DS.text }}>1.2d</p>
+                   </div>
+                   <div style={{ background: DS.surface, border: `1px solid ${DS.border}`, borderRadius: '20px', padding: '16px', textAlign: 'center' }}>
+                      <p style={{ fontSize: '0.65rem', color: DS.muted, fontWeight: 800, textTransform: 'uppercase', marginBottom: '8px' }}>Active Users</p>
+                      <p style={{ fontSize: '1.4rem', fontWeight: 900, color: DS.primary }}>{teamCount}</p>
+                   </div>
+                </div>
+                
+                <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '16px' }}>Department Load</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                   <div onClick={() => setSearch('Engineering')} style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', padding: '4px', borderRadius: '8px' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 700, color: DS.text, width: '80px' }}>Engineering</span>
+                      <div style={{ flex: 1, height: '6px', background: DS.surface, borderRadius: '3px', overflow: 'hidden' }}>
+                         <div style={{ width: '65%', height: '100%', background: DS.primary }} />
+                      </div>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.muted }}>65%</span>
+                   </div>
+                   <div onClick={() => setSearch('HR')} style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', padding: '4px', borderRadius: '8px' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 700, color: DS.text, width: '80px' }}>HR</span>
+                      <div style={{ flex: 1, height: '6px', background: DS.surface, borderRadius: '3px', overflow: 'hidden' }}>
+                         <div style={{ width: '20%', height: '100%', background: '#c084fc' }} />
+                      </div>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.muted }}>20%</span>
+                   </div>
+                   <div onClick={() => setSearch('Sales')} style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', padding: '4px', borderRadius: '8px' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 700, color: DS.text, width: '80px' }}>Sales</span>
+                      <div style={{ flex: 1, height: '6px', background: DS.surface, borderRadius: '3px', overflow: 'hidden' }}>
+                         <div style={{ width: '15%', height: '100%', background: '#4ade80' }} />
+                      </div>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.muted }}>15%</span>
+                   </div>
+                </div>
+              </div>
+
+              {/* 🎟️ TICKET TRIAGE PANEL */}
+              <div style={{ background: DS.card, borderRadius: '32px', padding: '32px', border: `1px solid ${DS.border}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                   <h3 style={{ fontSize: '1.1rem', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}><Zap size={20} color={DS.warning} /> Triage Panel</h3>
+                   <span style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.warning, background: 'rgba(255,184,110,0.1)', padding: '4px 10px', borderRadius: '8px' }}>Action Needed</span>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  <div>
+                    <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>Needs Assignment</h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {tickets.filter(t => !t.assigned_to && t.status === 'Open').slice(0, 2).map(t => (
+                         <div key={t.id} style={{ background: DS.surface, border: `1px solid ${DS.border}`, borderRadius: '16px', padding: '16px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                               <p style={{ fontSize: '0.85rem', fontWeight: 700, color: DS.text, margin: 0 }}>{t.title}</p>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                               <button style={{ flex: 1, background: 'rgba(14,165,233,0.1)', color: DS.primary, border: `1px solid rgba(14,165,233,0.2)`, padding: '6px', borderRadius: '8px', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><UserPlus size={14} /> Assign</button>
+                               <button onClick={() => navigate(`/tickets/${t.id}`)} style={{ flex: 1, background: DS.card, border: `1px solid ${DS.border}`, color: DS.text, padding: '6px', borderRadius: '8px', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><Play size={14} /> Open</button>
+                            </div>
+                         </div>
+                      ))}
+                      {tickets.filter(t => !t.assigned_to && t.status === 'Open').length === 0 && <p style={{ fontSize: '0.8rem', color: DS.muted, fontStyle: 'italic' }}>None at the moment.</p>}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>High Priority</h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {tickets.filter(t => (t.priority === 'High' || t.priority === 'Critical') && t.status !== 'Resolved' && t.status !== 'Closed').slice(0, 2).map(t => (
+                         <div key={t.id} style={{ background: DS.surface, border: `1px solid ${DS.border}`, borderRadius: '16px', padding: '16px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                               <p style={{ fontSize: '0.85rem', fontWeight: 700, color: DS.text, margin: 0 }}>{t.title}</p>
+                               <PriorityDot priority={t.priority} />
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                               <button onClick={() => navigate(`/tickets/${t.id}`)} style={{ flex: 1, background: 'rgba(255,68,68,0.1)', color: '#ff4444', border: `1px solid rgba(255,68,68,0.2)`, padding: '6px', borderRadius: '8px', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><Play size={14} /> Handle</button>
+                            </div>
+                         </div>
+                      ))}
+                      {tickets.filter(t => (t.priority === 'High' || t.priority === 'Critical') && t.status !== 'Resolved' && t.status !== 'Closed').length === 0 && <p style={{ fontSize: '0.8rem', color: DS.muted, fontStyle: 'italic' }}>No active high priority items.</p>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+           </div>
+
+           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {/* 📌 SYSTEM STATUS */}
+              <div style={{ background: DS.card, borderRadius: '32px', padding: '32px', border: `1px solid ${DS.border}` }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 900, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}><Activity size={20} color={DS.primary} /> System Status</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div style={{ background: DS.surface, padding: '20px', borderRadius: '20px', border: `1px solid ${DS.border}` }}>
+                    <p style={{ fontSize: '0.75rem', color: DS.muted, textTransform: 'uppercase', fontWeight: 800, marginBottom: '8px' }}>Open Tickets</p>
+                    <p style={{ fontSize: '1.75rem', fontWeight: 900, color: DS.text }}>{tickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed').length}</p>
+                  </div>
+                  <div style={{ background: DS.surface, padding: '20px', borderRadius: '20px', border: `1px solid ${DS.border}` }}>
+                    <p style={{ fontSize: '0.75rem', color: DS.muted, textTransform: 'uppercase', fontWeight: 800, marginBottom: '8px' }}>Pending Approvals</p>
+                    <p style={{ fontSize: '1.75rem', fontWeight: 900, color: DS.warning }}>{tickets.filter(t => t.status === 'Waiting for User').length}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 📊 SYSTEM INSIGHTS */}
+              <div style={{ background: DS.card, borderRadius: '32px', padding: '32px', border: `1px solid ${DS.border}` }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 900, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}><TrendingUp size={20} color={DS.primary} /> System Insights</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: DS.surface, padding: '20px', borderRadius: '20px' }}>
+                    <span style={{ fontSize: '0.85rem', color: DS.muted, fontWeight: 700 }}>Tickets this month</span>
+                    <span style={{ fontSize: '1.4rem', fontWeight: 900, color: DS.text }}>{tickets.filter(t => new Date(t.created_at).getMonth() === new Date().getMonth()).length}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: DS.surface, padding: '20px', borderRadius: '20px' }}>
+                    <span style={{ fontSize: '0.85rem', color: DS.muted, fontWeight: 700 }}>Most frequent issue</span>
+                    <span style={{ fontSize: '1rem', fontWeight: 900, color: DS.warning }}>Access Request</span>
+                  </div>
+                </div>
+              </div>
+              {/* 👥 TEAM ACTIVITY */}
+              <div style={{ background: DS.card, borderRadius: '32px', padding: '32px', border: `1px solid ${DS.border}`, flex: 1 }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 900, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}><Users size={20} color={DS.primary} /> Team Activity</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                   <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                     <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(14,165,233,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: DS.primary, fontWeight: 800, fontSize: '0.8rem' }}>AS</div>
+                     <div>
+                       <p style={{ fontSize: '0.9rem', fontWeight: 700, color: DS.text, marginBottom: '2px' }}>Alex assigned Ticket #829</p>
+                       <p style={{ fontSize: '0.75rem', color: DS.muted, fontWeight: 600 }}>10 mins ago</p>
+                     </div>
+                   </div>
+                   <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                     <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(74,222,128,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: DS.success, fontWeight: 800, fontSize: '0.8rem' }}>MJ</div>
+                     <div>
+                       <p style={{ fontSize: '0.9rem', fontWeight: 700, color: DS.text, marginBottom: '2px' }}>Mike resolved Network Issue</p>
+                       <p style={{ fontSize: '0.75rem', color: DS.muted, fontWeight: 600 }}>45 mins ago</p>
+                     </div>
+                   </div>
+                   <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                     <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,184,110,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: DS.warning, fontWeight: 800, fontSize: '0.8rem' }}>SJ</div>
+                     <div>
+                       <p style={{ fontSize: '0.9rem', fontWeight: 700, color: DS.text, marginBottom: '2px' }}>Sarah escalated Database Alert</p>
+                       <p style={{ fontSize: '0.75rem', color: DS.muted, fontWeight: 600 }}>2 hours ago</p>
+                     </div>
+                   </div>
+                </div>
+
+                <div style={{ marginTop: '40px' }}>
+                   <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '16px' }}>Schedule</h4>
+                   <MiniCalendar events={calendarEvents} onDateClick={(date) => {
+                     setSelectedDate(date);
+                     setSelectedDayEvents(calendarEvents.filter(e => isSameDay(e.date, date)));
+                     setShowDayModal(true);
+                   }} />
+                </div>
+              </div>
+           </div>
+        </div>
+
+
 
         {/* Stats Grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
@@ -365,6 +498,42 @@ export const AdminDashboard = () => {
             </div>
           </div>
       </div>
+
+        {/* Activity Detail Drawer */}
+        <Drawer
+          isOpen={showDayModal}
+          onClose={() => setShowDayModal(false)}
+          title="Operational Pulse"
+          subtitle={selectedDate ? format(selectedDate, 'EEEE, MMMM do') : undefined}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {selectedDayEvents.map(event => (
+              <div 
+                key={event.id}
+                onClick={() => {
+                  if (event.type === 'ticket') navigate(`/tickets/${event.id}`);
+                  if (event.type === 'subscription') navigate('/subscriptions');
+                  if (event.type === 'leave') navigate('/ess');
+                  setShowDayModal(false);
+                }}
+                style={{ background: DS.surface, padding: '20px', borderRadius: '18px', border: `1px solid ${DS.border}`, cursor: 'pointer', transition: 'all 0.2s' }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = event.color || DS.primary}
+                onMouseLeave={e => e.currentTarget.style.borderColor = DS.border}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: event.color }} />
+                  <span style={{ fontSize: '0.65rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{event.type}</span>
+                </div>
+                <p style={{ fontSize: '0.95rem', fontWeight: 600, color: DS.text, margin: 0 }}>{event.title}</p>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
+                  <span style={{ fontSize: '0.7rem', color: DS.primary, fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    Manage Item <ChevronRight size={12} />
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Drawer>
     </div>
   );
 };

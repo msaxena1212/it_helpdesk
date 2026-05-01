@@ -10,6 +10,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { getAllActivityLogs } from '../lib/api';
+import { Drawer } from '../components/Drawer';
 
 const DS = {
   bg: '#0f172a', card: '#131b2e', cardHigh: '#222a3d',
@@ -201,46 +202,6 @@ export const SuperAdminDashboard = () => {
     <div style={{ minHeight: '100vh', background: DS.bg, padding: '32px', fontFamily: "'Inter', sans-serif" }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
 
-        {/* Contextual Awareness: System Integrity & Latest Audit */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '24px', marginBottom: '32px' }}>
-          <div style={{ background: DS.card, borderRadius: '24px', padding: '24px', border: `1px solid ${DS.border}` }}>
-            <h3 style={{ fontSize: '0.875rem', fontWeight: 800, color: DS.text, textTransform: 'uppercase', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <ShieldCheck size={18} color={DS.primary} /> System Integrity
-            </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '0.85rem', color: DS.muted }}>Auth Service</span>
-                <span style={{ color: '#4ade80', fontSize: '0.8rem', fontWeight: 700 }}>Active</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '0.85rem', color: DS.muted }}>Database Pool</span>
-                <span style={{ color: '#4ade80', fontSize: '0.8rem', fontWeight: 700 }}>99.9% Up</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '0.85rem', color: DS.muted }}>Webhook Sync</span>
-                <span style={{ color: '#4ade80', fontSize: '0.8rem', fontWeight: 700 }}>Enabled</span>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ background: 'rgba(192,132,252,0.03)', borderRadius: '24px', padding: '24px', border: '1px solid rgba(192,132,252,0.1)' }}>
-            <h3 style={{ fontSize: '0.875rem', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <History size={18} /> Latest Governance Event
-            </h3>
-            {auditLogs.length > 0 ? (
-              <div style={{ background: DS.surface, padding: '12px 16px', borderRadius: '12px', border: `1px solid ${DS.border}` }}>
-                <p style={{ fontSize: '0.85rem', fontWeight: 700, color: DS.text }}>{auditLogs[0].action}</p>
-                <p style={{ fontSize: '0.75rem', color: DS.muted }}>By: {auditLogs[0].performer?.name || 'System'} • {format(new Date(auditLogs[0].created_at), 'HH:mm:ss')}</p>
-              </div>
-            ) : (
-              <p style={{ fontSize: '0.85rem', color: DS.muted, fontStyle: 'italic' }}>Monitoring system events...</p>
-            )}
-            <button onClick={() => setActiveView('audit')} style={{ marginTop: '12px', background: 'none', border: 'none', color: '#c084fc', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              View Audit Logs <ArrowRightLeft size={12} />
-            </button>
-          </div>
-        </div>
-
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px' }}>
           <div>
@@ -280,6 +241,48 @@ export const SuperAdminDashboard = () => {
             )}
           </div>
         </div>
+
+        {/* Contextual Awareness: System Integrity & Latest Audit */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '24px', marginBottom: '32px' }}>
+          <div style={{ background: DS.card, borderRadius: '24px', padding: '20px', border: `1px solid ${DS.border}` }}>
+            <h3 style={{ fontSize: '0.875rem', fontWeight: 800, color: DS.text, textTransform: 'uppercase', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ShieldCheck size={18} color={DS.primary} /> System Integrity
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.85rem', color: DS.muted }}>Auth Service</span>
+                <span style={{ color: '#4ade80', fontSize: '0.8rem', fontWeight: 700 }}>Active</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.85rem', color: DS.muted }}>Database Pool</span>
+                <span style={{ color: '#4ade80', fontSize: '0.8rem', fontWeight: 700 }}>99.9% Up</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.85rem', color: DS.muted }}>Webhook Sync</span>
+                <span style={{ color: '#4ade80', fontSize: '0.8rem', fontWeight: 700 }}>Enabled</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: 'rgba(192,132,252,0.03)', borderRadius: '24px', padding: '20px', border: '1px solid rgba(192,132,252,0.1)' }}>
+            <h3 style={{ fontSize: '0.875rem', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <History size={18} /> Latest Governance Event
+            </h3>
+            {auditLogs.length > 0 ? (
+              <div style={{ background: DS.surface, padding: '12px 16px', borderRadius: '12px', border: `1px solid ${DS.border}` }}>
+                <p style={{ fontSize: '0.85rem', fontWeight: 700, color: DS.text }}>{auditLogs[0].action}</p>
+                <p style={{ fontSize: '0.75rem', color: DS.muted }}>By: {auditLogs[0].performer?.name || 'System'} • {format(new Date(auditLogs[0].created_at), 'HH:mm:ss')}</p>
+              </div>
+            ) : (
+              <p style={{ fontSize: '0.85rem', color: DS.muted, fontStyle: 'italic' }}>Monitoring system events...</p>
+            )}
+            <button onClick={() => setActiveView('audit')} style={{ marginTop: '12px', background: 'none', border: 'none', color: '#c084fc', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              View Audit Logs <ArrowRightLeft size={12} />
+            </button>
+          </div>
+        </div>
+
+
 
         {/* Stats Grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '32px' }}>
@@ -489,171 +492,146 @@ export const SuperAdminDashboard = () => {
         )}
       </div>
 
-      {/* User Asset Portfolio Slide-over */}
-      <AnimatePresence>
-        {selectedUser && (
-          <div style={{ position: 'fixed', inset: 0, zIndex: 300 }}>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedUser(null)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} />
-            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '480px', background: DS.card, borderLeft: `1px solid ${DS.border}`, padding: '40px', overflowY: 'auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px' }}>
-                <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                  <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: 'linear-gradient(135deg, #0ea5e9, #1e3a5f)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '1.25rem', fontWeight: 800 }}>
-                    {selectedUser.name?.[0]}
+      {/* User Asset Portfolio Drawer */}
+      <Drawer
+        isOpen={!!selectedUser}
+        onClose={() => setSelectedUser(null)}
+        title={selectedUser?.name || 'Member Details'}
+        subtitle={selectedUser ? `${selectedUser.department} • ${selectedUser.role}` : ''}
+      >
+        {fetchingPortfolio ? (
+          <div style={{ padding: '64px', textAlign: 'center' }}><Loader2 className="animate-spin" color={DS.primary} size={32} style={{ margin: '0 auto' }} /></div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+            
+            {/* Current Assets */}
+            <section>
+              <h3 style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.primary, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Monitor size={16} /> Currently Assigned
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {userAssets.map(asset => (
+                  <div key={asset.id} style={{ padding: '16px', borderRadius: '16px', border: `1px solid ${DS.border}`, background: DS.surface }}>
+                    <p style={{ fontSize: '0.875rem', fontWeight: 700, margin: '0 0 4px' }}>{asset.device_name}</p>
+                    <p style={{ fontSize: '0.7rem', color: DS.primary, fontFamily: 'monospace' }}>{asset.device_id}</p>
                   </div>
-                  <div>
-                    <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0 }}>{selectedUser.name}</h2>
-                    <p style={{ color: DS.muted, fontSize: '0.85rem' }}>{selectedUser.department} • {selectedUser.role}</p>
+                ))}
+                {userAssets.length === 0 && (
+                  <div style={{ padding: '24px', textAlign: 'center', border: `1px dashed ${DS.border}`, borderRadius: '16px' }}>
+                    <p style={{ color: DS.muted, fontSize: '0.8rem', fontStyle: 'italic' }}>No assets currently assigned</p>
                   </div>
-                </div>
-                <button onClick={() => setSelectedUser(null)} style={{ background: 'none', border: 'none', color: DS.muted, cursor: 'pointer' }}><X size={24} /></button>
+                )}
               </div>
+            </section>
 
-              {fetchingPortfolio ? (
-                <div style={{ padding: '64px', textAlign: 'center' }}><Loader2 className="animate-spin" color={DS.primary} size={32} style={{ margin: '0 auto' }} /></div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-                  
-                  {/* Current Assets */}
-                  <section>
-                    <h3 style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.primary, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Monitor size={16} /> Currently Assigned
-                    </h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {userAssets.map(asset => (
-                        <div key={asset.id} style={{ padding: '16px', borderRadius: '16px', border: `1px solid ${DS.border}`, background: DS.surface }}>
-                          <p style={{ fontSize: '0.875rem', fontWeight: 700, margin: '0 0 4px' }}>{asset.device_name}</p>
-                          <p style={{ fontSize: '0.7rem', color: DS.primary, fontFamily: 'monospace' }}>{asset.device_id}</p>
-                        </div>
-                      ))}
-                      {userAssets.length === 0 && (
-                        <div style={{ padding: '24px', textAlign: 'center', border: `1px dashed ${DS.border}`, borderRadius: '16px' }}>
-                          <p style={{ color: DS.muted, fontSize: '0.8rem', fontStyle: 'italic' }}>No assets currently assigned</p>
-                        </div>
-                      )}
+            {/* Asset History */}
+            <section>
+              <h3 style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.primary, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <History size={16} /> Allocation History
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', position: 'relative' }}>
+                {userHistory.length > 1 && <div style={{ position: 'absolute', left: '9px', top: '20px', bottom: '20px', width: '2px', background: DS.border }} />}
+                {userHistory.map((h, i) => (
+                  <div key={h.id} style={{ display: 'flex', gap: '16px', position: 'relative', zIndex: 1 }}>
+                    <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: h.action === 'allocate' ? '#4ade80' : '#ff4444', border: `4px solid ${DS.card}`, flexShrink: 0 }} />
+                    <div>
+                      <p style={{ fontSize: '0.85rem', fontWeight: 700, margin: '0 0 4px' }}>
+                        {h.action === 'allocate' ? 'Allocated' : 'Deallocated'} {h.assets?.device_name}
+                      </p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '0.75rem', color: DS.muted }}>{format(new Date(h.created_at), 'MMM d, yyyy')}</span>
+                        <span style={{ fontSize: '0.7rem', color: DS.primary, fontWeight: 700 }}>• ID: {h.assets?.device_id}</span>
+                      </div>
                     </div>
-                  </section>
-
-                  {/* Asset History */}
-                  <section>
-                    <h3 style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.primary, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <History size={16} /> Allocation History
-                    </h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', position: 'relative' }}>
-                      {userHistory.length > 1 && <div style={{ position: 'absolute', left: '9px', top: '20px', bottom: '20px', width: '2px', background: DS.border }} />}
-                      {userHistory.map((h, i) => (
-                        <div key={h.id} style={{ display: 'flex', gap: '16px', position: 'relative', zIndex: 1 }}>
-                          <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: h.action === 'allocate' ? '#4ade80' : '#ff4444', border: `4px solid ${DS.card}`, flexShrink: 0 }} />
-                          <div>
-                            <p style={{ fontSize: '0.85rem', fontWeight: 700, margin: '0 0 4px' }}>
-                              {h.action === 'allocate' ? 'Allocated' : 'Deallocated'} {h.assets?.device_name}
-                            </p>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '0.75rem', color: DS.muted }}>{format(new Date(h.created_at), 'MMM d, yyyy')}</span>
-                              <span style={{ fontSize: '0.7rem', color: DS.primary, fontWeight: 700 }}>• ID: {h.assets?.device_id}</span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      {userHistory.length === 0 && (
-                        <p style={{ color: DS.muted, fontSize: '0.8rem', textAlign: 'center', padding: '20px' }}>No historical transactions found</p>
-                      )}
-                    </div>
-                  </section>
-
-                </div>
-              )}
-            </motion.div>
+                  </div>
+                ))}
+                {userHistory.length === 0 && (
+                  <p style={{ color: DS.muted, fontSize: '0.8rem', textAlign: 'center', padding: '20px' }}>No historical transactions found</p>
+                )}
+              </div>
+            </section>
           </div>
         )}
-      </AnimatePresence>
+      </Drawer>
 
-      {/* Add User Modal */}
-      <AnimatePresence>
-        {showUserModal && (
-          <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowUserModal(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }} />
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} style={{ position: 'relative', width: '500px', background: DS.card, borderRadius: '24px', border: `1px solid ${DS.border}`, padding: '32px', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px' }}><UserPlus size={24} color={DS.primary} /> Add Team Member</h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase' }}>Full Name</label>
-                  <input type="text" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="e.g. John Doe" style={{ width: '100%', padding: '12px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.85rem', outline: 'none' }} />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase' }}>Email Address</label>
-                  <input type="email" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} placeholder="e.g. john@company.com" style={{ width: '100%', padding: '12px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.85rem', outline: 'none' }} />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <label style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase' }}>Assigned Role</label>
-                    <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.85rem', outline: 'none' }}>
-                      <option value="employee">Employee</option>
-                      <option value="admin">IT Admin</option>
-                      <option value="inventory_manager">Inventory Manager</option>
-                      <option value="devops">DevOps</option>
-                      <option value="superadmin">Super Admin</option>
-                    </select>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <label style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase' }}>Department</label>
-                    <select value={newUser.department} onChange={e => setNewUser({...newUser, department: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.85rem', outline: 'none' }}>
-                      {departments.map(d => <option key={d.name} value={d.name}>{d.name}</option>)}
-                    </select>
-                  </div>
-                </div>
-              </div>
-              <button onClick={handleCreateUser} disabled={submitting} style={{ width: '100%', marginTop: '32px', background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                {submitting ? <Loader2 size={18} className="animate-spin" /> : <UserPlus size={18} />}
-                {submitting ? 'Adding Member...' : 'Confirm & Add Member'}
-              </button>
-            </motion.div>
+      {/* Add User Drawer */}
+      <Drawer
+        isOpen={showUserModal}
+        onClose={() => setShowUserModal(false)}
+        title="Add Team Member"
+        subtitle="Grant system access and assign roles"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase' }}>Full Name</label>
+            <input type="text" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="e.g. John Doe" style={{ width: '100%', padding: '14px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.9rem', outline: 'none' }} />
           </div>
-        )}
-      </AnimatePresence>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase' }}>Email Address</label>
+            <input type="email" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} placeholder="e.g. john@company.com" style={{ width: '100%', padding: '14px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.9rem', outline: 'none' }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase' }}>Assigned Role</label>
+            <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} style={{ width: '100%', padding: '14px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.9rem', outline: 'none' }}>
+              <option value="employee">Employee</option>
+              <option value="admin">IT Admin</option>
+              <option value="inventory_manager">Inventory Manager</option>
+              <option value="devops">DevOps</option>
+              <option value="superadmin">Super Admin</option>
+            </select>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase' }}>Department</label>
+            <select value={newUser.department} onChange={e => setNewUser({...newUser, department: e.target.value})} style={{ width: '100%', padding: '14px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.9rem', outline: 'none' }}>
+              {departments.map(d => <option key={d.name} value={d.name}>{d.name}</option>)}
+            </select>
+          </div>
+          <button onClick={handleCreateUser} disabled={submitting} style={{ width: '100%', marginTop: '16px', background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', border: 'none', borderRadius: '12px', padding: '16px', color: '#fff', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+            {submitting ? <Loader2 size={18} className="animate-spin" /> : <UserPlus size={18} />}
+            {submitting ? 'Adding Member...' : 'Confirm & Add Member'}
+          </button>
+        </div>
+      </Drawer>
 
-      {/* Edit User Modal */}
-      <AnimatePresence>
-        {editingUser && (
-          <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingUser(null)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }} />
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} style={{ position: 'relative', width: '500px', background: DS.card, borderRadius: '24px', border: `1px solid ${DS.border}`, padding: '32px', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px' }}><UserCog size={24} color={DS.primary} /> Edit Member Details</h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div style={{ padding: '16px', borderRadius: '16px', background: DS.surface, border: `1px solid ${DS.border}` }}>
-                  <p style={{ color: DS.text, fontWeight: 700, fontSize: '0.9rem' }}>{editingUser.name || editingUser.email}</p>
-                  <p style={{ color: DS.muted, fontSize: '0.75rem' }}>{editingUser.email}</p>
-                </div>
-                
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <label style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase' }}>System Role</label>
-                    <select value={editingUser.role} onChange={e => setEditingUser({...editingUser, role: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.85rem', outline: 'none' }}>
-                      <option value="employee">Employee</option>
-                      <option value="admin">IT Admin</option>
-                      <option value="inventory_manager">Inventory Manager</option>
-                      <option value="devops">DevOps</option>
-                      <option value="superadmin">Super Admin</option>
-                    </select>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <label style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase' }}>Department</label>
-                    <select value={editingUser.department} onChange={e => setEditingUser({...editingUser, department: e.target.value})} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.85rem', outline: 'none' }}>
-                      {departments.map(d => <option key={d.name} value={d.name}>{d.name}</option>)}
-                    </select>
-                  </div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: '12px', marginTop: '32px' }}>
-                <button onClick={() => setEditingUser(null)} style={{ flex: 1, padding: '14px', borderRadius: '12px', background: 'transparent', border: `1px solid ${DS.border}`, color: DS.muted, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-                <button onClick={handleUpdateUser} disabled={submitting} style={{ flex: 2, background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                  {submitting ? <Loader2 size={18} className="animate-spin" /> : <ShieldCheck size={18} />}
-                  {submitting ? 'Updating...' : 'Save Changes'}
-                </button>
-              </div>
-            </motion.div>
+      {/* Edit User Drawer */}
+      <Drawer
+        isOpen={!!editingUser}
+        onClose={() => setEditingUser(null)}
+        title="Edit Member"
+        subtitle={editingUser ? `Update permissions for ${editingUser.name || editingUser.email}` : ''}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={{ padding: '20px', borderRadius: '16px', background: DS.surface, border: `1px solid ${DS.border}` }}>
+            <p style={{ color: DS.text, fontWeight: 700, fontSize: '1rem', marginBottom: '4px' }}>{editingUser?.name || 'Pending Onboarding'}</p>
+            <p style={{ color: DS.muted, fontSize: '0.85rem', margin: 0 }}>{editingUser?.email}</p>
           </div>
-        )}
-      </AnimatePresence>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase' }}>System Role</label>
+            <select value={editingUser?.role} onChange={e => setEditingUser({...editingUser, role: e.target.value})} style={{ width: '100%', padding: '14px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.9rem', outline: 'none' }}>
+              <option value="employee">Employee</option>
+              <option value="admin">IT Admin</option>
+              <option value="inventory_manager">Inventory Manager</option>
+              <option value="devops">DevOps</option>
+              <option value="superadmin">Super Admin</option>
+            </select>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase' }}>Department</label>
+            <select value={editingUser?.department} onChange={e => setEditingUser({...editingUser, department: e.target.value})} style={{ width: '100%', padding: '14px', borderRadius: '12px', background: DS.surface, border: `1px solid ${DS.border}`, color: DS.text, fontSize: '0.9rem', outline: 'none' }}>
+              {departments.map(d => <option key={d.name} value={d.name}>{d.name}</option>)}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+            <button onClick={() => setEditingUser(null)} style={{ flex: 1, padding: '16px', borderRadius: '12px', background: 'transparent', border: `1px solid ${DS.border}`, color: DS.muted, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+            <button onClick={handleUpdateUser} disabled={submitting} style={{ flex: 2, background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', border: 'none', borderRadius: '12px', padding: '16px', color: '#fff', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+              {submitting ? <Loader2 size={18} className="animate-spin" /> : <ShieldCheck size={18} />}
+              {submitting ? 'Updating...' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
+      </Drawer>
     </div>
   );
 };

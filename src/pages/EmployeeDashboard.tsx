@@ -4,12 +4,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Ticket, CheckCircle2,
   Clock, RefreshCw, Calendar, FileText,
-  AlertTriangle, DollarSign, X, CalendarDays
+  AlertTriangle, DollarSign, X, CalendarDays, ChevronRight,
+  Unlock, Activity, Lightbulb, TrendingUp, Bell, AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { supabase } from '../lib/supabase';
 import { getLeaveRequests, createLeaveRequest, getSubscriptions, createSubscription, createTicket } from '../lib/api';
 import { CalendarView, MiniCalendar, CalendarEvent } from '../components/CalendarView';
+import { isSameDay, format } from 'date-fns';
+import { Drawer } from '../components/Drawer';
 
 const DS = {
   bg: '#0f172a',
@@ -20,6 +23,7 @@ const DS = {
   text: '#dae2fd',
   muted: '#88929b',
   surface: '#0b1326',
+  success: '#4ade80', danger: '#ff4444', warning: '#ffb86e',
 };
 
 const Badge = ({ status }: { status: string }) => {
@@ -69,6 +73,9 @@ export const EmployeeDashboard = () => {
   const [tickets, setTickets] = useState<any[]>([]);
   const [leaves, setLeaves] = useState<any[]>([]);
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
+  const [selectedDayEvents, setSelectedDayEvents] = useState<CalendarEvent[]>([]);
+  const [showDayModal, setShowDayModal] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -80,6 +87,9 @@ export const EmployeeDashboard = () => {
   const [showGrievanceModal, setShowGrievanceModal] = useState(false);
 
   const [leaveData, setLeaveData] = useState({ leave_type: 'Sick', start_date: '', end_date: '', reason: '' });
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const [leaveSuccess, setLeaveSuccess] = useState(false);
+  const [leaveLoading, setLeaveLoading] = useState(false);
   const [subData, setSubData] = useState({ service_name: '', cost: '', billing_cycle: 'Monthly', next_due_date: '', comment: '' });
   const [payslipData, setPayslipData] = useState({ 
     startMonth: 'January', 
@@ -124,32 +134,66 @@ export const EmployeeDashboard = () => {
       date: new Date(l.start_date),
       title: `Leave: ${l.leave_type}`,
       type: 'leave' as const,
-      color: '#ffb86e'
+      color: '#ffb86e',
+      originalData: l
     })),
     ...subscriptions.map(s => ({
       id: s.id,
       date: new Date(s.next_due_date),
       title: `Renew: ${s.service_name}`,
       type: 'subscription' as const,
-      color: '#4ade80'
+      color: '#4ade80',
+      originalData: s
     })),
     ...tickets.map(t => ({
       id: t.id,
       date: new Date(t.sla_deadline || t.created_at),
       title: `Ticket: ${t.title}`,
       type: 'ticket' as const,
-      color: '#0ea5e9'
+      color: '#0ea5e9',
+      originalData: t
     }))
   ];
 
+  const handleDateClick = (date: Date) => {
+    const dayEvents = calendarEvents.filter(e => isSameDay(e.date, date));
+    if (dayEvents.length > 0) {
+      setSelectedDate(date);
+      setSelectedDayEvents(dayEvents);
+      setShowDayModal(true);
+    }
+  };
+
   const handleLeaveSubmit = async () => {
+    setLeaveError(null);
+    // Validation
+    if (!leaveData.start_date || !leaveData.end_date) {
+      setLeaveError('Please select both start and end dates.');
+      return;
+    }
+    if (new Date(leaveData.end_date) < new Date(leaveData.start_date)) {
+      setLeaveError('End date cannot be before start date.');
+      return;
+    }
+    if (!leaveData.reason.trim()) {
+      setLeaveError('Please provide a reason for your leave.');
+      return;
+    }
     try {
+      setLeaveLoading(true);
       await createLeaveRequest(leaveData);
-      setShowLeaveModal(false);
-      fetchData();
-    } catch (e) {
+      setLeaveSuccess(true);
+      setTimeout(() => {
+        setShowLeaveModal(false);
+        setLeaveSuccess(false);
+        setLeaveData({ leave_type: 'Sick', start_date: '', end_date: '', reason: '' });
+        fetchData();
+      }, 1500);
+    } catch (e: any) {
       console.error(e);
-      alert('Failed to submit leave request');
+      setLeaveError(e?.message || e?.details || 'Failed to submit leave request. Please try again.');
+    } finally {
+      setLeaveLoading(false);
     }
   };
 
@@ -241,112 +285,46 @@ export const EmployeeDashboard = () => {
     <div style={{ minHeight: '100vh', background: DS.bg, padding: '32px', fontFamily: "'Inter', sans-serif" }}>
       <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
 
-        {/* Contextual Awareness Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 280px', gap: '20px', marginBottom: '32px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ 
-              background: 'rgba(14,165,233,0.03)', borderRadius: '24px', padding: '24px', 
-              border: `1px solid ${DS.border}`, display: 'flex', alignItems: 'center', gap: '16px' 
-            }}>
-              <RefreshCw size={18} color={DS.primary} className="animate-spin" />
-              <div>
-                <p style={{ fontSize: '0.65rem', fontWeight: 800, color: DS.primary, textTransform: 'uppercase', letterSpacing: '0.1em' }}>IT Announcement</p>
-                <p style={{ fontSize: '0.85rem', fontWeight: 600, color: DS.text }}>System maintenance scheduled for Saturday 11:00 PM.</p>
-              </div>
-            </div>
-
-            {tickets.some(t => t.status === 'Waiting for User') && (
-              <motion.div 
-                initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }}
-                style={{ 
-                  background: 'rgba(255,184,110,0.03)', borderRadius: '24px', padding: '24px', 
-                  border: '1px solid rgba(255,184,110,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'space-between'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ background: 'rgba(255,184,110,0.2)', borderRadius: '12px', padding: '8px' }}>
-                    <Clock size={18} color="#ffb86e" />
-                  </div>
-                  <div>
-                    <h4 style={{ fontSize: '0.85rem', fontWeight: 800, color: '#ffb86e' }}>Needs Your Attention</h4>
-                    <p style={{ fontSize: '0.75rem', color: DS.muted }}>You have tickets waiting for your response.</p>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => setSearch('Waiting for User')}
-                  style={{ background: '#ffb86e', color: '#000', border: 'none', borderRadius: '10px', padding: '8px 16px', fontSize: '0.7rem', fontWeight: 800, cursor: 'pointer' }}
-                >
-                  Review
-                </button>
-              </motion.div>
-            )}
-          </div>
-
-          <div style={{ background: DS.card, borderRadius: '24px', padding: '24px', border: `1px solid ${DS.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <p style={{ fontSize: '0.65rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>Quick Insight</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-               <div style={{ background: DS.surface, padding: '12px', borderRadius: '16px', border: `1px solid ${DS.border}` }}>
-                  <p style={{ fontSize: '0.6rem', color: DS.muted, fontWeight: 700 }}>Open Tickets</p>
-                  <p style={{ fontSize: '1.25rem', fontWeight: 800, color: DS.primary }}>{tickets.filter(t => !['Resolved', 'Closed'].includes(t.status)).length}</p>
-               </div>
-               <div style={{ background: DS.surface, padding: '12px', borderRadius: '16px', border: `1px solid ${DS.border}` }}>
-                  <p style={{ fontSize: '0.6rem', color: DS.muted, fontWeight: 700 }}>Leaves Applied</p>
-                  <p style={{ fontSize: '1.25rem', fontWeight: 800, color: '#4ade80' }}>
-                    {leaves?.length || 0}
-                  </p>
-               </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'stretch' }}>
-            <MiniCalendar events={calendarEvents} />
-          </div>
-        </div>
-
+        {/* Header - Minimal */}
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
           <div>
-            <p style={{ color: DS.muted, fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '4px' }}>Welcome back</p>
-            <h1 style={{ color: DS.text, fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>{name}</h1>
-            <p style={{ color: DS.muted, fontSize: '0.85rem', marginTop: '4px' }}>ESS Portal: Manage your requests, leaves, and subscriptions.</p>
+            <p style={{ color: DS.muted, fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '4px' }}>ESS Portal</p>
+            <h1 style={{ color: DS.text, fontSize: '2rem', fontWeight: 900, letterSpacing: '-0.04em', margin: 0 }}>Welcome, {name}</h1>
           </div>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <motion.button
-              whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-              onClick={() => setShowPayslipModal(true)}
-              style={{
-                background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`,
-                borderRadius: '14px', padding: '14px 20px', fontWeight: 700, fontSize: '0.875rem',
-                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
-              }}
-            >
-              <FileText size={18} /> Get Payslip
-            </motion.button>
+          <div>
             <motion.button
               whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
               onClick={() => setShowGrievanceModal(true)}
               style={{
                 background: 'rgba(255,68,68,0.1)', color: '#ffb4ab', border: '1px solid rgba(255,68,68,0.2)',
-                borderRadius: '14px', padding: '14px 20px', fontWeight: 700, fontSize: '0.875rem',
+                borderRadius: '14px', padding: '10px 16px', fontWeight: 700, fontSize: '0.8rem',
                 cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
               }}
             >
-              <AlertTriangle size={18} /> Grievance
-            </motion.button>
-            <motion.button
-              whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-              onClick={() => navigate('/tickets/new')}
-              style={{
-                background: 'linear-gradient(135deg, #0ea5e9, #0284c7)',
-                color: '#fff', border: 'none', borderRadius: '14px',
-                padding: '14px 24px', fontWeight: 700, fontSize: '0.875rem',
-                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
-                boxShadow: '0 8px 24px rgba(14,165,233,0.35)',
-              }}
-            >
-              <Plus size={18} /> Raise Ticket
+              <AlertTriangle size={16} /> Grievance
             </motion.button>
           </div>
         </header>
+
+        {/* 🔝 TOP: Personal Action Strip */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '40px' }}>
+          <motion.button whileHover={{ y: -4 }} onClick={() => navigate('/tickets/new')} style={{ background: DS.card, border: `1px solid ${DS.border}`, borderRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '16px', cursor: 'pointer', boxShadow: '0 12px 24px rgba(0,0,0,0.1)' }}>
+             <div style={{ background: 'rgba(14,165,233,0.1)', padding: '14px', borderRadius: '16px' }}><Ticket color={DS.primary} size={24} /></div>
+             <span style={{ fontSize: '1rem', fontWeight: 800, color: DS.text }}>Raise Request</span>
+          </motion.button>
+          <motion.button whileHover={{ y: -4 }} onClick={() => navigate('/tickets/new?type=access')} style={{ background: DS.card, border: `1px solid ${DS.border}`, borderRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '16px', cursor: 'pointer', boxShadow: '0 12px 24px rgba(0,0,0,0.1)' }}>
+             <div style={{ background: 'rgba(192,132,252,0.1)', padding: '14px', borderRadius: '16px' }}><Unlock color="#c084fc" size={24} /></div>
+             <span style={{ fontSize: '1rem', fontWeight: 800, color: DS.text }}>Request Access</span>
+          </motion.button>
+          <motion.button whileHover={{ y: -4 }} onClick={() => setShowPayslipModal(true)} style={{ background: DS.card, border: `1px solid ${DS.border}`, borderRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '16px', cursor: 'pointer', boxShadow: '0 12px 24px rgba(0,0,0,0.1)' }}>
+             <div style={{ background: 'rgba(74,222,128,0.1)', padding: '14px', borderRadius: '16px' }}><FileText color="#4ade80" size={24} /></div>
+             <span style={{ fontSize: '1rem', fontWeight: 800, color: DS.text }}>Get Payslip</span>
+          </motion.button>
+          <motion.button whileHover={{ y: -4 }} onClick={() => setShowLeaveModal(true)} style={{ background: DS.card, border: `1px solid ${DS.border}`, borderRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '16px', cursor: 'pointer', boxShadow: '0 12px 24px rgba(0,0,0,0.1)' }}>
+             <div style={{ background: 'rgba(255,184,110,0.1)', padding: '14px', borderRadius: '16px' }}><CalendarDays color="#ffb86e" size={24} /></div>
+             <span style={{ fontSize: '1rem', fontWeight: 800, color: DS.text }}>Apply Leave</span>
+          </motion.button>
+        </div>
 
         {/* Tabs */}
         <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', borderBottom: `1px solid ${DS.border}`, paddingBottom: '16px' }}>
@@ -472,180 +450,210 @@ export const EmployeeDashboard = () => {
         </div>
       </div>
 
-      {/* Leave Modal */}
-      <AnimatePresence>
-        {showLeaveModal && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} style={{ background: DS.card, padding: '32px', borderRadius: '24px', width: '100%', maxWidth: '400px', border: `1px solid ${DS.border}` }}>
-              <h3 style={{ color: DS.text, fontSize: '1.25rem', fontWeight: 800, marginBottom: '20px' }}>Request Leave</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div>
-                  <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Leave Type</label>
-                  <select value={leaveData.leave_type} onChange={e => setLeaveData({ ...leaveData, leave_type: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }}>
-                    <option>Sick</option><option>Casual</option><option>Privilege</option><option>Unpaid</option>
+        {/* Leave Drawer */}
+        <Drawer 
+          isOpen={showLeaveModal} 
+          onClose={() => setShowLeaveModal(false)} 
+          title="Apply for Leave"
+          subtitle="Submit your time-off request for approval"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <div style={{ display: 'flex', gap: '16px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block', textTransform: 'uppercase' }}>Leave Type</label>
+                <select value={leaveData.leave_type} onChange={e => setLeaveData({ ...leaveData, leave_type: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', fontSize: '0.9rem' }}>
+                  <option>Sick</option><option>Casual</option><option>Earned</option><option>Maternity/Paternity</option>
+                </select>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '16px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block', textTransform: 'uppercase' }}>Start Date</label>
+                <input type="date" value={leaveData.start_date} onChange={e => setLeaveData({ ...leaveData, start_date: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', fontSize: '0.9rem' }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block', textTransform: 'uppercase' }}>End Date</label>
+                <input type="date" value={leaveData.end_date} onChange={e => setLeaveData({ ...leaveData, end_date: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', fontSize: '0.9rem' }} />
+              </div>
+            </div>
+            <div>
+              <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block', textTransform: 'uppercase' }}>Reason</label>
+              <textarea value={leaveData.reason} onChange={e => setLeaveData({ ...leaveData, reason: e.target.value })} rows={4} placeholder="Briefly describe the reason for your leave..." style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', fontSize: '0.9rem', resize: 'none' }} />
+            </div>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+              <button onClick={() => setShowLeaveModal(false)} style={{ flex: 1, padding: '16px', background: 'transparent', color: DS.muted, border: `1px solid ${DS.border}`, borderRadius: '12px', cursor: 'pointer', fontWeight: 700 }}>Cancel</button>
+              <button onClick={handleLeaveSubmit} style={{ flex: 1, padding: '16px', background: '#4ade80', color: '#000', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: 800 }}>Submit Application</button>
+            </div>
+          </div>
+        </Drawer>
+
+        {/* Subscription Drawer */}
+        <Drawer
+          isOpen={showSubModal}
+          onClose={() => setShowSubModal(false)}
+          title="Add Subscription"
+          subtitle="Track recurring IT service costs"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <div>
+              <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block', textTransform: 'uppercase' }}>Service Name</label>
+              <input type="text" value={subData.service_name} onChange={e => setSubData({ ...subData, service_name: e.target.value })} placeholder="e.g. AWS, Figma, Zoom" style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', fontSize: '0.9rem' }} />
+            </div>
+            <div>
+              <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block', textTransform: 'uppercase' }}>Cost (₹)</label>
+              <input type="number" value={subData.cost} onChange={e => setSubData({ ...subData, cost: e.target.value })} placeholder="Enter amount" style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', fontSize: '0.9rem' }} />
+            </div>
+            <div style={{ display: 'flex', gap: '16px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block', textTransform: 'uppercase' }}>Billing Cycle</label>
+                <select value={subData.billing_cycle} onChange={e => setSubData({ ...subData, billing_cycle: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', fontSize: '0.9rem' }}>
+                  <option>Monthly</option><option>Quarterly</option><option>Yearly</option>
+                </select>
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block', textTransform: 'uppercase' }}>Next Due Date</label>
+                <input type="date" value={subData.next_due_date} onChange={e => setSubData({ ...subData, next_due_date: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', fontSize: '0.9rem' }} />
+              </div>
+            </div>
+            <div>
+              <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block', textTransform: 'uppercase' }}>Comment / Notes</label>
+              <textarea value={subData.comment} onChange={e => setSubData({ ...subData, comment: e.target.value })} rows={3} placeholder="Optional notes about this subscription..." style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', fontSize: '0.9rem', resize: 'none' }} />
+            </div>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+              <button onClick={() => setShowSubModal(false)} style={{ flex: 1, padding: '16px', background: 'transparent', color: DS.muted, border: `1px solid ${DS.border}`, borderRadius: '12px', cursor: 'pointer', fontWeight: 700 }}>Cancel</button>
+              <button onClick={handleSubSubmit} style={{ flex: 1, padding: '16px', background: '#89ceff', color: '#000', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: 800 }}>Add Subscription</button>
+            </div>
+          </div>
+        </Drawer>
+
+        {/* Payslip Drawer */}
+        <Drawer
+          isOpen={showPayslipModal}
+          onClose={() => setShowPayslipModal(false)}
+          title="Request Payslips"
+          subtitle="Download historical salary statements"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <div style={{ background: DS.surface, border: `1px solid ${DS.border}`, borderRadius: '20px', padding: '24px' }}>
+              <label style={{ color: DS.primary, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', display: 'block', marginBottom: '16px', letterSpacing: '0.1em' }}>Period From</label>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ flex: 1 }}>
+                  <select value={payslipData.startMonth} onChange={e => setPayslipData({ ...payslipData, startMonth: e.target.value })} style={{ width: '100%', background: DS.bg, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }}>
+                    {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(m => <option key={m}>{m}</option>)}
                   </select>
                 </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Start Date</label>
-                    <input type="date" value={leaveData.start_date} onChange={e => setLeaveData({ ...leaveData, start_date: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>End Date</label>
-                    <input type="date" value={leaveData.end_date} onChange={e => setLeaveData({ ...leaveData, end_date: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }} />
-                  </div>
-                </div>
-                <div>
-                  <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Reason</label>
-                  <textarea value={leaveData.reason} onChange={e => setLeaveData({ ...leaveData, reason: e.target.value })} rows={3} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px', resize: 'none' }} />
-                </div>
-                <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
-                  <button onClick={() => setShowLeaveModal(false)} style={{ flex: 1, padding: '12px', background: 'transparent', color: DS.muted, border: 'none', cursor: 'pointer', fontWeight: 700 }}>Cancel</button>
-                  <button onClick={handleLeaveSubmit} style={{ flex: 1, padding: '12px', background: '#4ade80', color: '#000', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 700 }}>Submit</button>
+                <div style={{ width: '100px' }}>
+                  <select value={payslipData.startYear} onChange={e => setPayslipData({ ...payslipData, startYear: e.target.value })} style={{ width: '100%', background: DS.bg, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }}>
+                    {['2023', '2024', '2025', '2026'].map(y => <option key={y}>{y}</option>)}
+                  </select>
                 </div>
               </div>
-            </motion.div>
-          </div>
-        )}
+            </div>
 
-        {/* Subscription Modal */}
-        {showSubModal && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} style={{ background: DS.card, padding: '32px', borderRadius: '24px', width: '100%', maxWidth: '400px', border: `1px solid ${DS.border}` }}>
-              <h3 style={{ color: DS.text, fontSize: '1.25rem', fontWeight: 800, marginBottom: '20px' }}>Add Subscription</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div>
-                  <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Service Name</label>
-                  <input type="text" value={subData.service_name} onChange={e => setSubData({ ...subData, service_name: e.target.value })} placeholder="e.g. AWS, Figma" style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }} />
+            <div style={{ background: DS.surface, border: `1px solid ${DS.border}`, borderRadius: '20px', padding: '24px' }}>
+              <label style={{ color: DS.primary, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', display: 'block', marginBottom: '16px', letterSpacing: '0.1em' }}>Period To</label>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ flex: 1 }}>
+                  <select value={payslipData.endMonth} onChange={e => setPayslipData({ ...payslipData, endMonth: e.target.value })} style={{ width: '100%', background: DS.bg, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }}>
+                    {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(m => <option key={m}>{m}</option>)}
+                  </select>
                 </div>
-                <div>
-                  <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Cost (₹)</label>
-                  <input type="number" value={subData.cost} onChange={e => setSubData({ ...subData, cost: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }} />
-                </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Billing Cycle</label>
-                    <select value={subData.billing_cycle} onChange={e => setSubData({ ...subData, billing_cycle: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }}>
-                      <option>Monthly</option><option>Quarterly</option><option>Yearly</option>
-                    </select>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Next Due Date</label>
-                    <input type="date" value={subData.next_due_date} onChange={e => setSubData({ ...subData, next_due_date: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }} />
-                  </div>
-                </div>
-                <div>
-                  <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Comment (Optional / Discontinuation Reason)</label>
-                  <textarea value={subData.comment} onChange={e => setSubData({ ...subData, comment: e.target.value })} rows={2} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px', resize: 'none' }} />
-                </div>
-                <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
-                  <button onClick={() => setShowSubModal(false)} style={{ flex: 1, padding: '12px', background: 'transparent', color: DS.muted, border: 'none', cursor: 'pointer', fontWeight: 700 }}>Cancel</button>
-                  <button onClick={handleSubSubmit} style={{ flex: 1, padding: '12px', background: '#89ceff', color: '#000', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 700 }}>Add</button>
+                <div style={{ width: '100px' }}>
+                  <select value={payslipData.endYear} onChange={e => setPayslipData({ ...payslipData, endYear: e.target.value })} style={{ width: '100%', background: DS.bg, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }}>
+                    {['2023', '2024', '2025', '2026'].map(y => <option key={y}>{y}</option>)}
+                  </select>
                 </div>
               </div>
-            </motion.div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+              <button onClick={() => setShowPayslipModal(false)} style={{ flex: 1, padding: '16px', background: 'transparent', color: DS.muted, border: `1px solid ${DS.border}`, borderRadius: '12px', cursor: 'pointer', fontWeight: 700 }}>Cancel</button>
+              <button onClick={handlePayslipSubmit} style={{ flex: 1, padding: '16px', background: DS.primary, color: '#fff', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: 800 }}>Request Downloads</button>
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+        </Drawer>
 
-      {/* Payslip Modal */}
-      <AnimatePresence>
-        {showPayslipModal && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} style={{ background: DS.card, padding: '32px', borderRadius: '24px', width: '100%', maxWidth: '400px', border: `1px solid ${DS.border}` }}>
-              <h3 style={{ color: DS.text, fontSize: '1.25rem', fontWeight: 800, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <FileText color={DS.primary} /> Request Payslips
-              </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div style={{ borderBottom: `1px solid ${DS.border}`, paddingBottom: '12px' }}>
-                  <label style={{ color: DS.primary, fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', display: 'block', marginBottom: '12px' }}>Period From</label>
-                  <div style={{ display: 'flex', gap: '12px' }}>
-                    <div style={{ flex: 1 }}>
-                      <select value={payslipData.startMonth} onChange={e => setPayslipData({ ...payslipData, startMonth: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }}>
-                        {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(m => <option key={m}>{m}</option>)}
-                      </select>
-                    </div>
-                    <div style={{ width: '100px' }}>
-                      <select value={payslipData.startYear} onChange={e => setPayslipData({ ...payslipData, startYear: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }}>
-                        {['2023', '2024', '2025', '2026'].map(y => <option key={y}>{y}</option>)}
-                      </select>
-                    </div>
-                  </div>
+        {/* Grievance Drawer */}
+        <Drawer
+          isOpen={showGrievanceModal}
+          onClose={() => setShowGrievanceModal(false)}
+          title="Confidential Grievance"
+          subtitle="Your submission goes directly to HR & Senior Management"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <div style={{ background: 'rgba(255,68,68,0.05)', border: '1px solid rgba(255,68,68,0.1)', borderRadius: '16px', padding: '16px', display: 'flex', gap: '12px' }}>
+              <AlertTriangle color="#ff4444" size={20} style={{ flexShrink: 0 }} />
+              <p style={{ color: DS.muted, fontSize: '0.85rem', margin: 0, lineHeight: 1.5 }}>
+                We maintain strict confidentiality for all grievances. If you choose to submit anonymously, your identity will not be shared with anyone.
+              </p>
+            </div>
+            <div>
+              <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block', textTransform: 'uppercase' }}>Describe the issue</label>
+              <textarea 
+                value={grievanceData.description} 
+                onChange={e => setGrievanceData({ ...grievanceData, description: e.target.value })} 
+                rows={6} 
+                placeholder="Provide as much detail as possible..."
+                style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', fontSize: '0.9rem', resize: 'none' }} 
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: DS.surface, padding: '16px', borderRadius: '12px', border: `1px solid ${DS.border}` }}>
+              <input 
+                type="checkbox" 
+                id="anon" 
+                checked={grievanceData.anonymous} 
+                onChange={e => setGrievanceData({ ...grievanceData, anonymous: e.target.checked })} 
+                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+              />
+              <label htmlFor="anon" style={{ color: DS.text, fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer' }}>Submit Anonymously</label>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+              <button onClick={() => setShowGrievanceModal(false)} style={{ flex: 1, padding: '16px', background: 'transparent', color: DS.muted, border: `1px solid ${DS.border}`, borderRadius: '12px', cursor: 'pointer', fontWeight: 700 }}>Cancel</button>
+              <button 
+                onClick={handleGrievanceSubmit} 
+                style={{ flex: 1, padding: '16px', background: '#ff4444', color: '#fff', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: 800 }}
+              >
+                File Grievance
+              </button>
+            </div>
+          </div>
+        </Drawer>
+
+        {/* Activity Detail Drawer */}
+        <Drawer
+          isOpen={showDayModal}
+          onClose={() => setShowDayModal(false)}
+          title="Daily Activity"
+          subtitle={selectedDate ? format(selectedDate, 'EEEE, MMMM do') : undefined}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {selectedDayEvents.map(event => (
+              <div 
+                key={event.id}
+                onClick={() => {
+                  if (event.type === 'ticket') navigate(`/tickets/${event.id}`);
+                  if (event.type === 'subscription') setActiveTab('subscriptions');
+                  if (event.type === 'leave') setActiveTab('leaves');
+                  setShowDayModal(false);
+                }}
+                style={{ background: DS.surface, padding: '20px', borderRadius: '18px', border: `1px solid ${DS.border}`, cursor: 'pointer', transition: 'all 0.2s' }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = event.color || DS.primary}
+                onMouseLeave={e => e.currentTarget.style.borderColor = DS.border}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: event.color }} />
+                  <span style={{ fontSize: '0.65rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{event.type}</span>
                 </div>
-
-                <div>
-                  <label style={{ color: DS.primary, fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', display: 'block', marginBottom: '12px' }}>Period To</label>
-                  <div style={{ display: 'flex', gap: '12px' }}>
-                    <div style={{ flex: 1 }}>
-                      <select value={payslipData.endMonth} onChange={e => setPayslipData({ ...payslipData, endMonth: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }}>
-                        {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(m => <option key={m}>{m}</option>)}
-                      </select>
-                    </div>
-                    <div style={{ width: '100px' }}>
-                      <select value={payslipData.endYear} onChange={e => setPayslipData({ ...payslipData, endYear: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }}>
-                        {['2023', '2024', '2025', '2026'].map(y => <option key={y}>{y}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
-                  <button onClick={() => setShowPayslipModal(false)} style={{ flex: 1, padding: '12px', background: 'transparent', color: DS.muted, border: 'none', cursor: 'pointer', fontWeight: 700 }}>Cancel</button>
-                  <button onClick={handlePayslipSubmit} style={{ flex: 1, padding: '12px', background: DS.primary, color: '#fff', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 700 }}>Request</button>
+                <p style={{ fontSize: '0.95rem', fontWeight: 600, color: DS.text, margin: 0 }}>{event.title}</p>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
+                  <span style={{ fontSize: '0.7rem', color: DS.primary, fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    View Details <ChevronRight size={12} />
+                  </span>
                 </div>
               </div>
-            </motion.div>
+            ))}
           </div>
-        )}
-      </AnimatePresence>
-
-      {/* Grievance Modal */}
-      <AnimatePresence>
-        {showGrievanceModal && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} style={{ background: DS.card, padding: '32px', borderRadius: '24px', width: '100%', maxWidth: '500px', border: `1px solid ${DS.border}` }}>
-              <h3 style={{ color: '#ffb4ab', fontSize: '1.25rem', fontWeight: 800, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <AlertTriangle /> Confidential Grievance
-              </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <p style={{ color: DS.muted, fontSize: '0.85rem', lineHeight: '1.5' }}>
-                  Your grievance will be sent directly to HR and Senior Management. All submissions are handled with strict confidentiality.
-                </p>
-                <div>
-                  <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Describe your grievance</label>
-                  <textarea 
-                    value={grievanceData.description} 
-                    onChange={e => setGrievanceData({ ...grievanceData, description: e.target.value })} 
-                    rows={4} 
-                    placeholder="Please provide details..."
-                    style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px', resize: 'none' }} 
-                  />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <input 
-                    type="checkbox" 
-                    id="anon" 
-                    checked={grievanceData.anonymous} 
-                    onChange={e => setGrievanceData({ ...grievanceData, anonymous: e.target.checked })} 
-                    style={{ width: '18px', height: '18px' }}
-                  />
-                  <label htmlFor="anon" style={{ color: DS.text, fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer' }}>Submit Anonymously</label>
-                </div>
-                <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
-                  <button onClick={() => setShowGrievanceModal(false)} style={{ flex: 1, padding: '12px', background: 'transparent', color: DS.muted, border: 'none', cursor: 'pointer', fontWeight: 700 }}>Cancel</button>
-                  <button 
-                    onClick={handleGrievanceSubmit} 
-                    disabled={!grievanceData.description}
-                    style={{ flex: 1, padding: '12px', background: '#ff4444', color: '#fff', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 700, opacity: grievanceData.description ? 1 : 0.5 }}
-                  >
-                    Submit Grievance
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+        </Drawer>
     </div>
   );
 };

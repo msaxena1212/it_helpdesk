@@ -169,18 +169,18 @@ export const MiniCalendar: React.FC<CalendarViewProps> = ({ events, onDateClick,
   const interval = eachDayOfInterval({ start: startDate, end: endDate });
 
   return (
-    <div style={{ background: DS.card, borderRadius: '20px', border: `1px solid ${DS.border}`, padding: '12px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', padding: '0 4px' }}>
-        <h4 style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.text, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{format(currentMonth, 'MMM yyyy')}</h4>
+    <div style={{ background: DS.card, borderRadius: '16px', border: `1px solid ${DS.border}`, padding: '12px', width: '100%' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', padding: '0 2px' }}>
+        <h4 style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.text, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{format(currentMonth, 'MMMM yyyy')}</h4>
         <div style={{ display: 'flex', gap: '2px' }}>
-          <button onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} style={{ padding: '4px', background: 'transparent', border: 'none', color: DS.muted, cursor: 'pointer' }}><ChevronLeft size={12} /></button>
-          <button onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} style={{ padding: '4px', background: 'transparent', border: 'none', color: DS.muted, cursor: 'pointer' }}><ChevronRight size={12} /></button>
+          <button onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} style={{ padding: '4px', background: DS.surface, borderRadius: '6px', border: `1px solid ${DS.border}`, color: DS.muted, cursor: 'pointer' }}><ChevronLeft size={12} /></button>
+          <button onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} style={{ padding: '4px', background: DS.surface, borderRadius: '6px', border: `1px solid ${DS.border}`, color: DS.muted, cursor: 'pointer' }}><ChevronRight size={12} /></button>
         </div>
       </div>
       
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
         {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-          <div key={i} style={{ textAlign: 'center', fontSize: '0.55rem', fontWeight: 800, color: DS.muted, marginBottom: '4px' }}>{d}</div>
+          <div key={i} style={{ textAlign: 'center', fontSize: '0.55rem', fontWeight: 800, color: DS.muted, marginBottom: '4px', textTransform: 'uppercase' }}>{d}</div>
         ))}
         {interval.map((day, i) => {
           const isSelected = isSameMonth(day, monthStart);
@@ -195,14 +195,17 @@ export const MiniCalendar: React.FC<CalendarViewProps> = ({ events, onDateClick,
                 aspectRatio: '1/1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                 borderRadius: '6px', cursor: 'pointer', 
                 border: isTodayDate ? `1px solid ${DS.primary}` : '1px solid transparent',
-                background: isTodayDate ? 'rgba(14,165,233,0.05)' : 'transparent',
-                opacity: isSelected ? 1 : 0.2
+                background: isTodayDate ? 'rgba(14,165,233,0.05)' : dayEvents.length > 0 ? 'rgba(14,165,233,0.02)' : 'transparent',
+                opacity: isSelected ? 1 : 0.2,
+                transition: 'all 0.2s'
               }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(14,165,233,0.08)'}
+              onMouseLeave={e => e.currentTarget.style.background = isTodayDate ? 'rgba(14,165,233,0.05)' : dayEvents.length > 0 ? 'rgba(14,165,233,0.02)' : 'transparent'}
             >
-              <span style={{ fontSize: '0.65rem', fontWeight: 700, color: isTodayDate ? DS.primary : DS.text }}>{format(day, 'd')}</span>
-              <div style={{ display: 'flex', gap: '1.5px', marginTop: '1.5px' }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: isTodayDate ? DS.primary : DS.text }}>{format(day, 'd')}</span>
+              <div style={{ display: 'flex', gap: '2px', marginTop: '2px' }}>
                 {dayEvents.slice(0, 3).map((e, idx) => (
-                  <div key={idx} style={{ width: '3px', height: '3px', borderRadius: '50%', background: e.color || '#fff' }} />
+                  <div key={idx} style={{ width: '4px', height: '4px', borderRadius: '50%', background: e.color || '#fff' }} />
                 ))}
               </div>
             </div>

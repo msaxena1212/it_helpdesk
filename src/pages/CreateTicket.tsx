@@ -42,8 +42,16 @@ const inputStyle = {
 export const CreateTicket = () => {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
-  
+
+  // Must be declared before any state that depends on it
+  const canCreateOnBehalf = profile?.role === 'admin' || profile?.role === 'superadmin' || profile?.role === 'network_engineer' || user?.email === 'superadmin@elitemindz.co';
+  const totalSteps = canCreateOnBehalf ? 4 : 3;
+
+  // Non-privileged users skip step 1 (User Info is auto-filled from profile)
   const [step, setStep] = useState(1);
+  const startStep = canCreateOnBehalf ? 1 : 2;
+  const visibleStep = canCreateOnBehalf ? step : step - 1;
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -71,13 +79,12 @@ export const CreateTicket = () => {
     justification: ''
   });
 
-  const canCreateOnBehalf = profile?.role === 'admin' || profile?.role === 'superadmin' || profile?.role === 'network_engineer' || user?.email === 'superadmin@elitemindz.co';
 
   useEffect(() => {
     if (canCreateOnBehalf) {
       getAllUsers().then(data => setUsers(data || [])).catch(console.error);
     } else if (user) {
-      // Pre-fill for standard user
+      // Pre-fill for standard user and skip to step 2
       setFormData(prev => ({
         ...prev,
         employee_id: user.id,
@@ -85,6 +92,7 @@ export const CreateTicket = () => {
         email: user.email || '',
         department: profile?.department || user.user_metadata?.department || ''
       }));
+      setStep(2); // skip User Info step for regular users
     }
   }, [user, profile, canCreateOnBehalf]);
 
@@ -108,7 +116,7 @@ export const CreateTicket = () => {
 
   const nextStep = () => {
     // Validation
-    if (step === 1) {
+    if (step === 1 && canCreateOnBehalf) {
       if (!formData.name || !formData.email || !formData.department) {
         setError("Please fill all required user details");
         return;
@@ -125,7 +133,7 @@ export const CreateTicket = () => {
     setStep(s => Math.min(s + 1, 4));
   };
   
-  const prevStep = () => setStep(s => Math.max(s - 1, 1));
+  const prevStep = () => setStep(s => Math.max(s - 1, canCreateOnBehalf ? 1 : 2));
 
   const handleSubmit = async () => {
     try {
@@ -164,7 +172,8 @@ export const CreateTicket = () => {
     }
   };
 
-  const stepLabels = ['User Info', 'Issue Details', 'Impact & Priority', 'Review'];
+  const allStepLabels = ['User Info', 'Issue Details', 'Impact & Priority', 'Review'];
+  const stepLabels = canCreateOnBehalf ? allStepLabels : allStepLabels.slice(1);
 
   const renderStep = () => {
     switch (step) {
@@ -513,11 +522,11 @@ export const CreateTicket = () => {
             </div>
             {/* Step indicators */}
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              {[1, 2, 3, 4].map(s => (
+              {Array.from({ length: totalSteps }, (_, i) => i + 1).map(s => (
                 <div key={s} style={{
                   height: '6px', borderRadius: '99px',
-                  width: step === s ? '32px' : '16px',
-                  background: s <= step ? '#0ea5e9' : 'rgba(255,255,255,0.1)',
+                  width: visibleStep === s ? '32px' : '16px',
+                  background: s <= visibleStep ? '#0ea5e9' : 'rgba(255,255,255,0.1)',
                   transition: 'all 0.3s',
                 }} />
               ))}
@@ -525,7 +534,7 @@ export const CreateTicket = () => {
           </div>
           {/* Step label */}
           <p style={{ color: '#89ceff', fontSize: '0.75rem', fontWeight: 700 }}>
-            Step {step} of 4 — {stepLabels[step - 1]}
+            Step {visibleStep} of {totalSteps} — {stepLabels[visibleStep - 1]}
           </p>
         </div>
 
@@ -540,21 +549,21 @@ export const CreateTicket = () => {
         <div style={{ padding: '20px 32px', borderTop: `1px solid ${DS.border}`, background: 'rgba(0,0,0,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <button
             onClick={prevStep}
-            disabled={step === 1}
+            disabled={step === startStep}
             style={{
               display: 'flex', alignItems: 'center', gap: '6px',
               padding: '10px 18px', borderRadius: '10px',
-              background: step === 1 ? 'transparent' : DS.surface,
-              border: step === 1 ? 'none' : `1px solid ${DS.border}`,
-              color: step === 1 ? 'transparent' : DS.text,
-              fontWeight: 700, fontSize: '0.8rem', cursor: step === 1 ? 'default' : 'pointer',
-              letterSpacing: '0.04em', pointerEvents: step === 1 ? 'none' : 'auto',
+              background: step === startStep ? 'transparent' : DS.surface,
+              border: step === startStep ? 'none' : `1px solid ${DS.border}`,
+              color: step === startStep ? 'transparent' : DS.text,
+              fontWeight: 700, fontSize: '0.8rem', cursor: step === startStep ? 'default' : 'pointer',
+              letterSpacing: '0.04em', pointerEvents: step === startStep ? 'none' : 'auto',
             }}
           >
             <ChevronLeft size={16} /> Back
           </button>
 
-          {error && step < 4 && <div style={{ color: '#ffb4ab', fontSize: '0.75rem', fontWeight: 600 }}>{error}</div>}
+          {error && step < 4 && <div style={{ color: '#ffb4ab', fontSize: '0.75rem', fontWeight: 600, maxWidth: '200px', textAlign: 'center' }}>{error}</div>}
 
           {step < 4 ? (
             <motion.button
