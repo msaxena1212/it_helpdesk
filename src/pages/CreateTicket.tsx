@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createTicket, getAllUsers } from '../lib/api';
 import {
   CheckCircle2, ChevronRight, ChevronLeft,
@@ -16,7 +16,7 @@ const DS = {
 
 import { useAuth } from '../lib/AuthContext';
 
-const categories = ['Hardware', 'Software', 'Network', 'Access / Login', 'Deployment Request', 'GitLab Access', 'Other'];
+const categories = ['Hardware', 'Software', 'Network', 'Access / Login', 'Deployment Request', 'GitLab Access', 'Biometric Access', 'Other'];
 const departmentsList = ['Engineering', 'Product', 'HR', 'Sales', 'Marketing', 'Finance', 'Other'];
 const priorities = [
   { label: 'Low', color: '#4ade80', bg: 'rgba(74,222,128,0.12)' },
@@ -41,6 +41,8 @@ const inputStyle = {
 
 export const CreateTicket = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const typeParam = searchParams.get('type');
   const { user, profile } = useAuth();
 
   // Must be declared before any state that depends on it
@@ -57,6 +59,14 @@ export const CreateTicket = () => {
   const [success, setSuccess] = useState(false);
 
   const [users, setUsers] = useState<any[]>([]);
+
+  // Filter categories based on typeParam
+  const filteredCategories = categories.filter(cat => {
+    if (typeParam === 'access') return ['GitLab Access', 'Biometric Access'].includes(cat);
+    if (typeParam === 'deployment') return ['Deployment Request'].includes(cat);
+    // 'request' or default
+    return !['GitLab Access', 'Biometric Access', 'Deployment Request'].includes(cat);
+  });
 
   const [formData, setFormData] = useState({
     employee_id: '',
@@ -90,11 +100,13 @@ export const CreateTicket = () => {
         employee_id: user.id,
         name: profile?.name || user.user_metadata?.name || user.email?.split('@')[0] || '',
         email: user.email || '',
-        department: profile?.department || user.user_metadata?.department || ''
+        department: profile?.department || user.user_metadata?.department || '',
+        // Auto-select category if there's only one option
+        category: filteredCategories.length === 1 ? filteredCategories[0] : ''
       }));
       setStep(2); // skip User Info step for regular users
     }
-  }, [user, profile, canCreateOnBehalf]);
+  }, [user, profile, canCreateOnBehalf, filteredCategories.length]);
 
   const handleUserSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedId = e.target.value;
@@ -157,8 +169,8 @@ export const CreateTicket = () => {
           branch_tag_name: formData.branch_tag_name,
           release_notes: formData.release_notes,
           rollback_plan: formData.rollback_plan
-        } : formData.category === 'GitLab Access' ? {
-          gitlab_repo_url: formData.gitlab_repo_url,
+        } : ['GitLab Access', 'Biometric Access'].includes(formData.category) ? {
+          gitlab_repo_url: formData.category === 'GitLab Access' ? formData.gitlab_repo_url : undefined,
           requested_role: profile?.role || 'User',
           justification: formData.justification
         } : {}
@@ -278,7 +290,7 @@ export const CreateTicket = () => {
                 onBlur={e => (e.target.style.borderColor = DS.border)}
               >
                 <option value="" style={{ background: DS.surface }}>Select a category...</option>
-                {categories.map(c => (
+                {filteredCategories.map(c => (
                   <option key={c} value={c} style={{ background: DS.surface }}>{c}</option>
                 ))}
               </select>
@@ -321,12 +333,14 @@ export const CreateTicket = () => {
               </>
             )}
 
-            {formData.category === 'GitLab Access' && (
+            {['GitLab Access', 'Biometric Access'].includes(formData.category) && (
               <>
-                <div>
-                  <FieldLabel required>GitLab Repo URL</FieldLabel>
-                  <input type="text" value={formData.gitlab_repo_url} onChange={e => setFormData({ ...formData, gitlab_repo_url: e.target.value })} placeholder="https://gitlab.com/org/repo" style={inputStyle} />
-                </div>
+                {formData.category === 'GitLab Access' && (
+                  <div>
+                    <FieldLabel required>GitLab Repo URL</FieldLabel>
+                    <input type="text" value={formData.gitlab_repo_url} onChange={e => setFormData({ ...formData, gitlab_repo_url: e.target.value })} placeholder="https://gitlab.com/org/repo" style={inputStyle} />
+                  </div>
+                )}
                 <div>
                   <FieldLabel required>Justification</FieldLabel>
                   <textarea rows={2} value={formData.justification} onChange={e => setFormData({ ...formData, justification: e.target.value })} placeholder="Why do you need access?" style={{ ...inputStyle, resize: 'vertical' }} />
@@ -334,7 +348,7 @@ export const CreateTicket = () => {
               </>
             )}
 
-            {!['GitLab Access', 'Deployment Request'].includes(formData.category) && (
+            {!['GitLab Access', 'Biometric Access', 'Deployment Request'].includes(formData.category) && (
               <div>
                 <FieldLabel required>Frequency of Issue</FieldLabel>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -410,7 +424,7 @@ export const CreateTicket = () => {
               </div>
             </div>
 
-            {!['GitLab Access', 'Deployment Request'].includes(formData.category) && (
+            {!['GitLab Access', 'Biometric Access', 'Deployment Request'].includes(formData.category) && (
               <div>
                 <FieldLabel>When did this issue start?</FieldLabel>
                 <div style={{ position: 'relative' }}>

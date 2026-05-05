@@ -5,7 +5,7 @@ import {
   Plus, Search, Ticket, CheckCircle2,
   Clock, RefreshCw, Calendar, FileText,
   AlertTriangle, DollarSign, X, CalendarDays, ChevronRight,
-  Unlock, Activity, Lightbulb, TrendingUp, Bell, AlertCircle
+  Unlock, Activity, Lightbulb, TrendingUp, Bell, AlertCircle, Rocket
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -307,7 +307,7 @@ export const EmployeeDashboard = () => {
         </header>
 
         {/* 🔝 TOP: Personal Action Strip */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '40px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', marginBottom: '40px' }}>
           <motion.button whileHover={{ y: -4 }} onClick={() => navigate('/tickets/new')} style={{ background: DS.card, border: `1px solid ${DS.border}`, borderRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '16px', cursor: 'pointer', boxShadow: '0 12px 24px rgba(0,0,0,0.1)' }}>
              <div style={{ background: 'rgba(14,165,233,0.1)', padding: '14px', borderRadius: '16px' }}><Ticket color={DS.primary} size={24} /></div>
              <span style={{ fontSize: '1rem', fontWeight: 800, color: DS.text }}>Raise Request</span>
@@ -315,6 +315,10 @@ export const EmployeeDashboard = () => {
           <motion.button whileHover={{ y: -4 }} onClick={() => navigate('/tickets/new?type=access')} style={{ background: DS.card, border: `1px solid ${DS.border}`, borderRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '16px', cursor: 'pointer', boxShadow: '0 12px 24px rgba(0,0,0,0.1)' }}>
              <div style={{ background: 'rgba(192,132,252,0.1)', padding: '14px', borderRadius: '16px' }}><Unlock color="#c084fc" size={24} /></div>
              <span style={{ fontSize: '1rem', fontWeight: 800, color: DS.text }}>Request Access</span>
+          </motion.button>
+          <motion.button whileHover={{ y: -4 }} onClick={() => navigate('/tickets/new?type=deployment')} style={{ background: DS.card, border: `1px solid ${DS.border}`, borderRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '16px', cursor: 'pointer', boxShadow: '0 12px 24px rgba(0,0,0,0.1)' }}>
+             <div style={{ background: 'rgba(255,184,110,0.1)', padding: '14px', borderRadius: '16px' }}><Rocket color="#ffb86e" size={24} /></div>
+             <span style={{ fontSize: '1rem', fontWeight: 800, color: DS.text }}>Request Deployment</span>
           </motion.button>
           <motion.button whileHover={{ y: -4 }} onClick={() => setShowPayslipModal(true)} style={{ background: DS.card, border: `1px solid ${DS.border}`, borderRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '16px', cursor: 'pointer', boxShadow: '0 12px 24px rgba(0,0,0,0.1)' }}>
              <div style={{ background: 'rgba(74,222,128,0.1)', padding: '14px', borderRadius: '16px' }}><FileText color="#4ade80" size={24} /></div>
