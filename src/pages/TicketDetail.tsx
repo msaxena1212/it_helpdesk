@@ -368,12 +368,12 @@ export const TicketDetail = () => {
                 })}
               </div>
 
-              {profile?.role === 'inventory_manager' && ticket.procurement_status !== 'Handover Pending' && (
+              {profile?.role === 'inventory_manager' && ticket.procurement_status !== 'Completed' && (
                 <button
-                  onClick={() => handleProcurementAction(ticket.procurement_status === 'Requested' ? 'Procuring' : 'Handover Pending')}
+                  onClick={() => navigate('/inventory')}
                   style={{ width: '100%', padding: '16px', borderRadius: '12px', background: DS.primary, border: 'none', color: '#fff', fontWeight: 800, marginTop: '32px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
                 >
-                  <ShoppingCart size={18} /> Move to {ticket.procurement_status === 'Requested' ? 'Procuring' : 'Handover Pending'}
+                  <ShoppingCart size={18} /> Manage in Inventory Requests
                 </button>
               )}
             </div>

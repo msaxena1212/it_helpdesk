@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createTicket, getAllUsers } from '../lib/api';
 import {
   CheckCircle2, ChevronRight, ChevronLeft,
   AlertCircle, Cpu, Type, FileText, Paperclip,
-  ShieldAlert, Send, Loader2, X, Calendar, User, Mail, Building2, Activity, Clock
+  ShieldAlert, Send, Loader2, X, Calendar, CalendarDays, User, Mail, Building2, Activity, Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -15,8 +15,9 @@ const DS = {
 };
 
 import { useAuth } from '../lib/AuthContext';
+import { createLeaveRequest } from '../lib/api';
 
-const categories = ['Hardware', 'Software', 'Network', 'Access / Login', 'Deployment Request', 'GitLab Access', 'Biometric Access', 'Other'];
+const categories = ['Hardware', 'Software', 'Network', 'Access / Login', 'Deployment Request', 'GitLab Access', 'Biometric Access', 'Leave Request', 'Other'];
 const departmentsList = ['Engineering', 'Product', 'HR', 'Sales', 'Marketing', 'Finance', 'Other'];
 const priorities = [
   { label: 'Low', color: '#4ade80', bg: 'rgba(74,222,128,0.12)' },
@@ -25,6 +26,7 @@ const priorities = [
   { label: 'Critical', color: '#ff4444', bg: 'rgba(255,68,68,0.12)' },
 ];
 const frequencies = ['One-Time', 'Intermittent', 'Always'];
+const stepLabels = ['User Info', 'Issue Details', 'Priority & Impact', 'Review & Submit'];
 
 const FieldLabel = ({ children, required }: { children: React.ReactNode, required?: boolean }) => (
   <label style={{ display: 'block', color: DS.muted, fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '8px' }}>
@@ -60,13 +62,16 @@ export const CreateTicket = () => {
 
   const [users, setUsers] = useState<any[]>([]);
 
-  // Filter categories based on typeParam
-  const filteredCategories = categories.filter(cat => {
+  // Filter categories based on typeParam (memoized to prevent infinite re-renders)
+  const filteredCategories = useMemo(() => categories.filter(cat => {
+    if (typeParam === 'all') return true; // Sidebar "Raise Ticket" — show everything
     if (typeParam === 'access') return ['GitLab Access', 'Biometric Access'].includes(cat);
     if (typeParam === 'deployment') return ['Deployment Request'].includes(cat);
-    // 'request' or default
+    if (typeParam === 'request') return !['GitLab Access', 'Biometric Access', 'Deployment Request'].includes(cat);
+    // If no typeParam is passed (Raise Request from ESS), exclude access & deployment categories
+    // since those have their own dedicated flows
     return !['GitLab Access', 'Biometric Access', 'Deployment Request'].includes(cat);
-  });
+  }), [typeParam]);
 
   const [formData, setFormData] = useState({
     employee_id: '',
@@ -86,7 +91,10 @@ export const CreateTicket = () => {
     rollback_plan: '',
     gitlab_repo_url: '',
     requested_role: 'Developer',
-    justification: ''
+    justification: '',
+    leave_type: 'Sick',
+    leave_start_date: '',
+    leave_end_date: ''
   });
 
 
@@ -96,22 +104,20 @@ export const CreateTicket = () => {
     } 
     
     if (user) {
-      // Pre-fill for standard user and skip to step 2
       setFormData(prev => ({
         ...prev,
         employee_id: prev.employee_id || user.id,
         name: prev.name || profile?.name || user.user_metadata?.name || user.email?.split('@')[0] || '',
         email: prev.email || user.email || '',
         department: prev.department || profile?.department || user.user_metadata?.department || '',
-        // Auto-select category if there's only one option
         category: filteredCategories.length === 1 ? filteredCategories[0] : prev.category
       }));
       
       if (!canCreateOnBehalf) {
-        setStep(2); // skip User Info step for regular users
+        setStep(2);
       }
     }
-  }, [user, profile, canCreateOnBehalf, filteredCategories]);
+  }, [user, profile, canCreateOnBehalf, typeParam]);
 
   const handleUserSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedId = e.target.value;
@@ -132,7 +138,6 @@ export const CreateTicket = () => {
   };
 
   const nextStep = () => {
-    // Validation
     if (step === 1 && canCreateOnBehalf) {
       if (!formData.name || !formData.email || !formData.department) {
         setError("Please fill all required user details");
@@ -140,7 +145,7 @@ export const CreateTicket = () => {
       }
     }
     if (step === 2) {
-      const isDevOps = ['GitLab Access', 'Deployment Request'].includes(formData.category);
+      const isDevOps = ['GitLab Access', 'Biometric Access', 'Deployment Request'].includes(formData.category);
       if (!formData.title || !formData.description || !formData.category || (!isDevOps && !formData.frequency)) {
         setError("Please fill all required issue details");
         return;
@@ -156,30 +161,41 @@ export const CreateTicket = () => {
     try {
       setLoading(true);
       setError(null);
-      await createTicket({
-        employee_id: formData.employee_id || undefined, // undefined will fallback to auth user
-        title: formData.title,
-        description: formData.description,
-        issue_type: formData.category,
-        sub_type: 'General',
-        priority: formData.priority,
-        is_blocked: formData.is_blocked === 'Yes',
-        issue_start_date: formData.issue_start_date || null,
-        frequency: formData.frequency,
-        department: formData.department,
-        guest_name: formData.employee_id ? undefined : formData.name,
-        guest_email: formData.employee_id ? undefined : formData.email,
-        custom_fields: formData.category === 'Deployment Request' ? {
-          target_environment: formData.target_environment,
-          branch_tag_name: formData.branch_tag_name,
-          release_notes: formData.release_notes,
-          rollback_plan: formData.rollback_plan
-        } : ['GitLab Access', 'Biometric Access'].includes(formData.category) ? {
-          gitlab_repo_url: formData.category === 'GitLab Access' ? formData.gitlab_repo_url : undefined,
-          requested_role: profile?.role || 'User',
-          justification: formData.justification
-        } : {}
-      });
+      
+      if (formData.category === 'Leave Request') {
+        if (!formData.leave_start_date || !formData.leave_end_date) throw new Error('Please provide both start and end dates.');
+        await createLeaveRequest({
+          leave_type: formData.leave_type,
+          start_date: formData.leave_start_date,
+          end_date: formData.leave_end_date,
+          reason: formData.description
+        });
+      } else {
+        await createTicket({
+          employee_id: formData.employee_id || undefined,
+          title: formData.title,
+          description: formData.description,
+          issue_type: formData.category,
+          sub_type: 'General',
+          priority: formData.priority,
+          is_blocked: formData.is_blocked === 'Yes',
+          issue_start_date: formData.issue_start_date || null,
+          frequency: formData.frequency,
+          department: formData.department,
+          guest_name: formData.employee_id ? undefined : formData.name,
+          guest_email: formData.employee_id ? undefined : formData.email,
+          custom_fields: formData.category === 'Deployment Request' ? {
+            target_environment: formData.target_environment,
+            branch_tag_name: formData.branch_tag_name,
+            release_notes: formData.release_notes,
+            rollback_plan: formData.rollback_plan
+          } : ['GitLab Access', 'Biometric Access'].includes(formData.category) ? {
+            gitlab_repo_url: formData.category === 'GitLab Access' ? formData.gitlab_repo_url : undefined,
+            requested_role: profile?.role || 'User',
+            justification: formData.justification
+          } : {}
+        });
+      }
       setSuccess(true);
       setTimeout(() => navigate('/'), 2000);
     } catch (err: any) {
@@ -188,9 +204,6 @@ export const CreateTicket = () => {
       setLoading(false);
     }
   };
-
-  const allStepLabels = ['User Info', 'Issue Details', 'Impact & Priority', 'Review'];
-  const stepLabels = canCreateOnBehalf ? allStepLabels : allStepLabels.slice(1);
 
   const renderStep = () => {
     switch (step) {
@@ -206,8 +219,6 @@ export const CreateTicket = () => {
                   value={formData.employee_id}
                   onChange={handleUserSelect}
                   style={{ ...inputStyle, cursor: 'pointer', border: '1px solid rgba(14,165,233,0.3)' }}
-                  onFocus={e => (e.target.style.borderColor = 'rgba(14,165,233,0.5)')}
-                  onBlur={e => (e.target.style.borderColor = 'rgba(14,165,233,0.3)')}
                 >
                   <option value="" style={{ background: DS.surface }}>-- Autofill from existing user --</option>
                   {users.map(u => (
@@ -216,7 +227,6 @@ export const CreateTicket = () => {
                 </select>
               </div>
             )}
-
             <div>
               <FieldLabel required>Full Name</FieldLabel>
               <div style={{ position: 'relative' }}>
@@ -227,8 +237,6 @@ export const CreateTicket = () => {
                   readOnly={!canCreateOnBehalf}
                   onChange={e => setFormData({ ...formData, name: e.target.value })}
                   style={{ ...inputStyle, paddingLeft: '40px', opacity: !canCreateOnBehalf ? 0.7 : 1 }}
-                  onFocus={e => (e.target.style.borderColor = 'rgba(14,165,233,0.5)')}
-                  onBlur={e => (e.target.style.borderColor = DS.border)}
                 />
               </div>
             </div>
@@ -242,8 +250,6 @@ export const CreateTicket = () => {
                   readOnly={!canCreateOnBehalf}
                   onChange={e => setFormData({ ...formData, email: e.target.value })}
                   style={{ ...inputStyle, paddingLeft: '40px', opacity: !canCreateOnBehalf ? 0.7 : 1 }}
-                  onFocus={e => (e.target.style.borderColor = 'rgba(14,165,233,0.5)')}
-                  onBlur={e => (e.target.style.borderColor = DS.border)}
                 />
               </div>
             </div>
@@ -256,8 +262,6 @@ export const CreateTicket = () => {
                   disabled={!canCreateOnBehalf}
                   onChange={e => setFormData({ ...formData, department: e.target.value })}
                   style={{ ...inputStyle, paddingLeft: '40px', cursor: !canCreateOnBehalf ? 'default' : 'pointer', opacity: !canCreateOnBehalf ? 0.7 : 1 }}
-                  onFocus={e => (e.target.style.borderColor = 'rgba(14,165,233,0.5)')}
-                  onBlur={e => (e.target.style.borderColor = DS.border)}
                 >
                   <option value="" style={{ background: DS.surface }}>Select Department</option>
                   {departmentsList.map(d => (
@@ -274,17 +278,17 @@ export const CreateTicket = () => {
           <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
             style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}
           >
-            <div>
-              <FieldLabel required>Issue Title</FieldLabel>
-              <input
-                type="text" placeholder="e.g. Laptop not turning on"
-                value={formData.title}
-                onChange={e => setFormData({ ...formData, title: e.target.value })}
-                style={inputStyle}
-                onFocus={e => (e.target.style.borderColor = 'rgba(14,165,233,0.5)')}
-                onBlur={e => (e.target.style.borderColor = DS.border)}
-              />
-            </div>
+            {formData.category !== 'Leave Request' && (
+              <div>
+                <FieldLabel required>Issue Title</FieldLabel>
+                <input
+                  type="text" placeholder="e.g. Laptop not turning on"
+                  value={formData.title}
+                  onChange={e => setFormData({ ...formData, title: e.target.value })}
+                  style={inputStyle}
+                />
+              </div>
+            )}
             <div>
               <FieldLabel required>Issue Type</FieldLabel>
               <select
@@ -292,8 +296,6 @@ export const CreateTicket = () => {
                 onChange={e => setFormData({ ...formData, category: e.target.value })}
                 disabled={filteredCategories.length === 1}
                 style={{ ...inputStyle, cursor: filteredCategories.length === 1 ? 'default' : 'pointer', opacity: filteredCategories.length === 1 ? 0.7 : 1 }}
-                onFocus={e => (e.target.style.borderColor = 'rgba(14,165,233,0.5)')}
-                onBlur={e => (e.target.style.borderColor = DS.border)}
               >
                 <option value="" style={{ background: DS.surface }}>Select a category...</option>
                 {filteredCategories.map(c => (
@@ -302,17 +304,43 @@ export const CreateTicket = () => {
               </select>
             </div>
             <div>
-              <FieldLabel required>Describe the Issue</FieldLabel>
+              <FieldLabel required>{formData.category === 'Leave Request' ? 'Leave Reason' : 'Description'}</FieldLabel>
               <textarea
-                rows={4}
-                placeholder="Explain the problem in detail"
+                rows={4} placeholder={formData.category === 'Leave Request' ? "Why are you applying for leave?" : "Explain the problem in detail"}
                 value={formData.description}
                 onChange={e => setFormData({ ...formData, description: e.target.value })}
-                style={{ ...inputStyle, resize: 'vertical', minHeight: '100px' }}
-                onFocus={e => (e.target.style.borderColor = 'rgba(14,165,233,0.5)')}
-                onBlur={e => (e.target.style.borderColor = DS.border)}
+                style={{ ...inputStyle, resize: 'vertical' }}
               />
             </div>
+
+            {formData.category === 'Leave Request' && (
+              <>
+                <div>
+                  <FieldLabel required>Leave Type</FieldLabel>
+                  <select
+                    value={formData.leave_type}
+                    onChange={e => setFormData({ ...formData, leave_type: e.target.value })}
+                    style={inputStyle}
+                  >
+                    <option value="Sick" style={{ background: DS.surface }}>Sick Leave</option>
+                    <option value="Casual" style={{ background: DS.surface }}>Casual Leave</option>
+                    <option value="Annual" style={{ background: DS.surface }}>Annual Leave</option>
+                    <option value="Maternity/Paternity" style={{ background: DS.surface }}>Maternity/Paternity</option>
+                    <option value="Unpaid" style={{ background: DS.surface }}>Unpaid Leave</option>
+                  </select>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <FieldLabel required>Start Date</FieldLabel>
+                    <input type="date" value={formData.leave_start_date} onChange={e => setFormData({ ...formData, leave_start_date: e.target.value })} style={inputStyle} />
+                  </div>
+                  <div>
+                    <FieldLabel required>End Date</FieldLabel>
+                    <input type="date" value={formData.leave_end_date} onChange={e => setFormData({ ...formData, leave_end_date: e.target.value })} style={inputStyle} />
+                  </div>
+                </div>
+              </>
+            )}
 
             {formData.category === 'Deployment Request' && (
               <>
@@ -354,7 +382,7 @@ export const CreateTicket = () => {
               </>
             )}
 
-            {!['GitLab Access', 'Biometric Access', 'Deployment Request'].includes(formData.category) && (
+            {!['GitLab Access', 'Biometric Access', 'Deployment Request', 'Leave Request'].includes(formData.category) && (
               <div>
                 <FieldLabel required>Frequency of Issue</FieldLabel>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -381,6 +409,20 @@ export const CreateTicket = () => {
         );
 
       case 3:
+        if (formData.category === 'Leave Request') {
+          return (
+            <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '24px', alignItems: 'center', justifyContent: 'center', padding: '40px 0' }}
+            >
+              <CalendarDays size={48} color={DS.primary} style={{ opacity: 0.8 }} />
+              <div style={{ textAlign: 'center' }}>
+                <h4 style={{ color: DS.text, fontSize: '1.2rem', margin: '0 0 8px 0' }}>Ready to Submit</h4>
+                <p style={{ color: DS.muted, fontSize: '0.85rem', margin: 0, maxWidth: '300px' }}>Your leave request is ready for submission to HR for approval.</p>
+              </div>
+            </motion.div>
+          );
+        }
+
         return (
           <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
             style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}

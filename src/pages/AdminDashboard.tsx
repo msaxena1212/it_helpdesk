@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import {
   Plus, Search, Filter, ChevronRight, Ticket, CheckCircle2,
   Clock, AlertTriangle, RefreshCw, Users, TrendingUp, Shield, X,
-  Activity, Lightbulb, TrendingDown, Target, BarChart3, AlertCircle, Zap, UserPlus, Play
+  Activity, Lightbulb, TrendingDown, Target, BarChart3, AlertCircle, Zap, UserPlus, Play, Inbox
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '../lib/supabase';

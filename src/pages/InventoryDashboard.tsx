@@ -426,6 +426,14 @@ export const InventoryDashboard = ({ isDashboard, isRequests }: { isDashboard?: 
                             Ready for Handover
                           </button>
                         )}
+                        {ticket.procurement_status === 'Handover Pending' && (
+                          <button 
+                            onClick={() => handleOpenModal(ticket, 'Completed')}
+                            style={{ background: DS.success, border: 'none', borderRadius: '10px', padding: '10px 16px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
+                          >
+                            Complete Handover
+                          </button>
+                        )}
                         <button 
                           onClick={() => navigate(`/tickets/${ticket.id}`)}
                           style={{ background: 'transparent', border: `1px solid ${DS.border}`, borderRadius: '10px', padding: '10px', color: DS.muted, cursor: 'pointer' }}

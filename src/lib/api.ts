@@ -51,19 +51,26 @@ export const sendNotification = async (params: {
   if (error) console.error("Notification Error:", error);
 
   // 2. Email Webhook (External)
-  const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL;
+  const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbzw2_iFWH9sHWAgqM7N2ySwrLZU-qS0ftYmMD1Bc6te1uYw1h926c8SPVqACTmg4D6G/exec';
   if (googleWebhookUrl && emailData) {
-    fetch(googleWebhookUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      body: JSON.stringify({
-        type: 'email_notification',
-        subject: title,
-        message,
-        ...emailData,
-        app_url: window.location.origin + (ticketId ? `/tickets/${ticketId}` : '')
-      })
-    }).catch(err => console.error("Email Webhook Error:", err));
+    // Fetch emails for the userIds
+    const { data: profiles } = await supabase.from('profiles').select('email').in('id', userIds);
+    const emails = profiles?.map(p => p.email).filter(Boolean) || [];
+
+    if (emails.length > 0) {
+      fetch(googleWebhookUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        body: JSON.stringify({
+          type: 'email_notification',
+          subject: title,
+          message,
+          recipient_email: emails.join(','), // Send to all targeted users
+          ...emailData,
+          app_url: window.location.origin + (ticketId ? `/tickets/${ticketId}` : '')
+        })
+      }).catch(err => console.error("Email Webhook Error:", err));
+    }
   }
 };
 
@@ -71,6 +78,13 @@ export const notifyAdmins = async (params: Omit<Parameters<typeof sendNotificati
   const { data: admins } = await supabase.from('profiles').select('id').in('role', ['admin', 'superadmin']);
   if (admins) {
     await sendNotification({ ...params, userIds: admins.map(a => a.id) });
+  }
+};
+
+export const notifyRoles = async (roles: string[], params: Omit<Parameters<typeof sendNotification>[0], 'userIds'>) => {
+  const { data: users } = await supabase.from('profiles').select('id').in('role', roles);
+  if (users) {
+    await sendNotification({ ...params, userIds: users.map(u => u.id) });
   }
 };
 
@@ -130,18 +144,40 @@ export const createTicket = async (ticketData: any) => {
   const sla_deadline = new Date();
   sla_deadline.setHours(sla_deadline.getHours() + slaDuration);
 
-  // Auto-assignment for DevOps tickets
-  let assignedTo = null;
+  // Auto-assignment for specialized tickets
+  let assignedTo = ticketData.assigned_to || null;
   let initialStatus = 'Open';
-  if (['Deployment Request', 'GitLab Access'].includes(issue_type)) {
-    const { data: devopsUsers } = await supabase
+  let assignedRoleName = '';
+
+  // Routing rules:
+  // 1. GitLab Access, Deployment Request → DevOps
+  // 2. Leave Request, HR / Payroll, Other → HR
+  // 3. Hardware, Asset Request → Inventory Manager
+  // 4. Everything else (Software, Network, Access / Login, Biometric Access) → Network Engineer
+  const autoAssignRoles: Record<string, string> = {
+    'Deployment Request': 'devops',
+    'GitLab Access': 'devops',
+    'Leave Request': 'hr',
+    'HR / Payroll': 'hr',
+    'Other': 'hr',
+    'Hardware': 'inventory_manager',
+    'Asset Request': 'inventory_manager',
+  };
+
+  // Default fallback role for categories not in the map
+  const defaultRole = 'network_engineer';
+
+  if (!assignedTo) {
+    const targetRole = autoAssignRoles[issue_type] || defaultRole;
+    assignedRoleName = targetRole;
+    const { data: roleUsers } = await supabase
       .from('profiles')
       .select('id')
-      .eq('role', 'devops')
+      .eq('role', targetRole)
       .limit(1);
     
-    if (devopsUsers && devopsUsers.length > 0) {
-      assignedTo = devopsUsers[0].id;
+    if (roleUsers && roleUsers.length > 0) {
+      assignedTo = roleUsers[0].id;
       initialStatus = 'Assigned';
     }
   }
@@ -173,9 +209,10 @@ export const createTicket = async (ticketData: any) => {
   if (error) throw error;
   
   // Log activity
+  const roleLabel = assignedRoleName ? assignedRoleName.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
   await supabase.from('activity_logs').insert([{
     ticket_id: data.id,
-    action: `Ticket created${assignedTo ? ' and auto-assigned to DevOps' : ''}`,
+    action: `Ticket created${assignedTo ? ` and auto-assigned to ${roleLabel}` : ''}`,
     performed_by: userData.user.id
   }]);
 
@@ -201,7 +238,7 @@ export const createTicket = async (ticketData: any) => {
   }
 
   // Sync to Google Sheets
-  const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL;
+  const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbzw2_iFWH9sHWAgqM7N2ySwrLZU-qS0ftYmMD1Bc6te1uYw1h926c8SPVqACTmg4D6G/exec';
   if (googleWebhookUrl) {
     console.log(`Syncing ticket "${data.title}" to Google Sheets...`);
     try {
@@ -247,14 +284,63 @@ export const createTicket = async (ticketData: any) => {
     }
   });
 
-  // Notify Assignee if auto-assigned
+  // Specialized Role Notifications
+  const roleMap: Record<string, string[]> = {
+    'Deployment Request': ['devops'],
+    'GitLab Access': ['devops'],
+    'Leave Request': ['hr'],
+    'HR / Payroll': ['hr'],
+    'Other': ['hr'],
+    'Hardware': ['inventory_manager'],
+    'Asset Request': ['inventory_manager'],
+    'Software': ['network_engineer'],
+    'Network': ['network_engineer'],
+    'Access / Login': ['network_engineer'],
+    'Biometric Access': ['network_engineer'],
+  };
+
+  const targetRoles = roleMap[data.issue_type];
+  if (targetRoles) {
+    notifyRoles(targetRoles, {
+      type: 'ROLE_ASSIGNED',
+      title: `New ${data.issue_type} Task`,
+      message: `A new ticket requiring your department's attention has been raised: ${data.title}`,
+      ticketId: data.id
+    });
+  }
+
+  // Notify Assignee if auto-assigned (with email)
   if (assignedTo) {
     sendNotification({
       userIds: [assignedTo],
       type: 'TICKET_ASSIGNED',
       title: 'Ticket Assigned to You',
-      message: `You have been assigned to: ${data.title}`,
-      ticketId: data.id
+      message: `You have been assigned to: ${data.title}. Priority: ${data.priority}`,
+      ticketId: data.id,
+      emailData: {
+        template: 'assignment',
+        ticket_title: data.title,
+        ticket_id: data.id,
+        priority: data.priority,
+        requester_name: requesterName
+      }
+    });
+  }
+
+  // Notify Requester of ticket creation confirmation
+  if (targetEmployeeId) {
+    sendNotification({
+      userIds: [targetEmployeeId],
+      type: 'TICKET_CREATED',
+      title: 'Your Ticket Has Been Submitted',
+      message: `Your request "${data.title}" has been received and ${assignedTo ? 'assigned to the ' + roleLabel + ' team' : 'is being routed'}. Ticket ID: #${data.id.substring(0,8).toUpperCase()}`,
+      ticketId: data.id,
+      emailData: {
+        template: 'ticket_confirmation',
+        ticket_title: data.title,
+        ticket_id: data.id,
+        priority: data.priority
+      }
     });
   }
 
@@ -309,22 +395,35 @@ export const assignTicket = async (ticketId: string, adminId: string) => {
     performed_by: userData.user?.id
   }]);
 
-  // Notify Assignee
+  // Notify Assignee (with email)
   sendNotification({
     userIds: [adminId],
     type: 'TICKET_ASSIGNED',
     title: 'New Ticket Assigned',
     message: `You have been assigned to ticket #${ticketId.substring(0,8)}: ${data.title}`,
     ticketId: ticketId,
-    emailData: { template: 'assignment', ticket_title: data.title }
+    emailData: { template: 'assignment', ticket_title: data.title, ticket_id: ticketId }
   });
 
-  // Notify Admins of assignment action
+  // Notify Requester of assignment
+  if (data.employee_id && data.employee_id !== adminId) {
+    sendNotification({
+      userIds: [data.employee_id],
+      type: 'TICKET_UPDATE',
+      title: 'Your Ticket Has Been Assigned',
+      message: `Your ticket "${data.title}" has been assigned to a team member and is being worked on.`,
+      ticketId: ticketId,
+      emailData: { template: 'ticket_assigned_update', ticket_title: data.title, ticket_id: ticketId }
+    });
+  }
+
+  // Notify Admins of assignment action (with email)
   notifyAdmins({
     type: 'ADMIN_ACTION',
     title: 'Ticket Assigned',
     message: `Admin assigned ticket #${ticketId.substring(0,8)} to another team member.`,
-    ticketId: ticketId
+    ticketId: ticketId,
+    emailData: { template: 'admin_action', ticket_title: data.title, ticket_id: ticketId }
   });
 
   return data;
@@ -384,24 +483,26 @@ export const updateStatus = async (ticketId: string, oldStatus: string, newStatu
     performed_by: userData.user.id
   }]);
 
-  // Notify Requester
-  if (data.employee_id) {
+  // Notify Stakeholders (employee + assignee, with email)
+  const stakeholders = [data.employee_id, data.assigned_to].filter(id => id && id !== userData.user.id) as string[];
+  if (stakeholders.length > 0) {
     sendNotification({
-      userIds: [data.employee_id],
+      userIds: stakeholders,
       type: 'STATUS_CHANGE',
       title: 'Ticket Status Updated',
-      message: `Your ticket "${data.title}" is now ${newStatus}.`,
+      message: `Ticket "${data.title}" is now ${newStatus}.`,
       ticketId: ticketId,
-      emailData: { template: 'status_update', new_status: newStatus }
+      emailData: { template: 'status_update', new_status: newStatus, ticket_title: data.title, ticket_id: ticketId }
     });
   }
 
-  // Notify Admins
+  // Notify Admins (with email)
   notifyAdmins({
     type: 'ADMIN_ACTION',
     title: 'Status Updated',
-    message: `Ticket #${ticketId.substring(0,8)} status changed to ${newStatus}.`,
-    ticketId: ticketId
+    message: `Ticket #${ticketId.substring(0,8)} "${data.title}" status changed from ${oldStatus} to ${newStatus}.`,
+    ticketId: ticketId,
+    emailData: { template: 'status_update', new_status: newStatus, old_status: oldStatus, ticket_title: data.title, ticket_id: ticketId }
   });
 
   return data;
@@ -442,6 +543,43 @@ export const requestInventory = async (ticketId: string, managerId: string, rema
     ticket_id: ticketId
   }]);
 
+  // Send Email Notification to Inventory Manager
+  sendNotification({
+    userIds: [managerId],
+    type: 'INVENTORY_REQUEST',
+    title: 'Action Required: Inventory Request',
+    message: `A part has been requested for ticket #${ticketId.substring(0,8)}. Remarks: ${remarks}`,
+    ticketId: ticketId,
+    emailData: {
+      template: 'inventory_request',
+      ticket_id: ticketId,
+      remarks: remarks,
+      requester_name: userData.user.email?.split('@')[0] || 'Admin'
+    }
+  });
+
+  // Notify the ticket requester
+  const { data: reqTicket } = await supabase.from('tickets').select('employee_id, title').eq('id', ticketId).single();
+  if (reqTicket?.employee_id) {
+    sendNotification({
+      userIds: [reqTicket.employee_id],
+      type: 'TICKET_UPDATE',
+      title: 'Inventory Being Arranged',
+      message: `Parts are being arranged for your ticket "${reqTicket.title}". You'll be notified when ready.`,
+      ticketId: ticketId,
+      emailData: { template: 'inventory_update', ticket_title: reqTicket.title, ticket_id: ticketId }
+    });
+  }
+
+  // Notify Admins
+  notifyAdmins({
+    type: 'ADMIN_ACTION',
+    title: 'Inventory Requested',
+    message: `Inventory requested for ticket #${ticketId.substring(0,8)}. Remarks: ${remarks}`,
+    ticketId: ticketId,
+    emailData: { template: 'inventory_request', ticket_id: ticketId, remarks: remarks }
+  });
+
   return data;
 };
 
@@ -453,6 +591,11 @@ export const updateProcurementStatus = async (ticketId: string, newStatus: strin
     procurement_status: newStatus,
     updated_at: new Date().toISOString()
   };
+
+  // Automatically assign ticket to Inventory Manager when procurement starts
+  if (newStatus === 'Procuring') {
+    updatePayload.assigned_to = userData.user.id;
+  }
 
   if (details) {
     if (details.supplier) updatePayload.procurement_supplier = details.supplier;
@@ -476,6 +619,30 @@ export const updateProcurementStatus = async (ticketId: string, newStatus: strin
     performed_by: userData.user.id
   }]);
 
+  // Fetch ticket details for notifications
+  const { data: procTicket } = await supabase.from('tickets').select('employee_id, title, assigned_to').eq('id', ticketId).single();
+
+  // Notify ticket requester of procurement progress
+  if (procTicket?.employee_id) {
+    sendNotification({
+      userIds: [procTicket.employee_id],
+      type: 'PROCUREMENT_UPDATE',
+      title: `Procurement Update: ${newStatus}`,
+      message: `Procurement for your ticket "${procTicket.title}" has been updated to: ${newStatus}.`,
+      ticketId: ticketId,
+      emailData: { template: 'procurement_update', ticket_title: procTicket.title, ticket_id: ticketId, new_status: newStatus }
+    });
+  }
+
+  // Notify Admins of all procurement changes
+  notifyAdmins({
+    type: 'ADMIN_ACTION',
+    title: `Procurement: ${newStatus}`,
+    message: `Procurement status for ticket #${ticketId.substring(0,8)} updated to ${newStatus}.`,
+    ticketId: ticketId,
+    emailData: { template: 'procurement_update', ticket_id: ticketId, new_status: newStatus }
+  });
+
   // Notify SuperAdmin if handover is pending
   if (newStatus === 'Handover Pending') {
     // Find superadmins
@@ -491,6 +658,31 @@ export const updateProcurementStatus = async (ticketId: string, newStatus: strin
           ticket_id: ticketId
         }])
       ));
+    }
+
+    // Send email to Network Engineer (and Admin via GAS webhook)
+    notifyRoles(['network_engineer'], {
+      type: 'INVENTORY_HANDOVER',
+      title: 'Action Required: Inventory Ready for Handover',
+      message: `The requested part for ticket #${ticketId.substring(0,8)} is ready for handover. Please collect it from the Inventory Manager.`,
+      ticketId: ticketId,
+      emailData: {
+        template: 'inventory_handover',
+        ticket_id: ticketId,
+        new_status: newStatus
+      }
+    });
+
+    // Also notify the assigned network engineer directly
+    if (procTicket?.assigned_to) {
+      sendNotification({
+        userIds: [procTicket.assigned_to],
+        type: 'INVENTORY_HANDOVER',
+        title: 'Inventory Ready for Pickup',
+        message: `The part for ticket "${procTicket.title}" is ready for handover. Please collect from the Inventory Manager.`,
+        ticketId: ticketId,
+        emailData: { template: 'inventory_handover', ticket_id: ticketId, ticket_title: procTicket.title }
+      });
     }
   }
 
@@ -586,8 +778,18 @@ export const updateDevOpsStatus = async (
       ticket_id: ticketId
     }]);
 
+    // Send confirmation email via Webhook (already handled by specialized devops_confirmation route)
+    // but we can also add a notifyAdmins here for visibility
+    notifyAdmins({
+      type: 'DEVOPS_UPDATE',
+      title: `DevOps Action: ${devopsStatus}`,
+      message: `Ticket #${ticketId.substring(0,8)} was updated by DevOps. Status: ${devopsStatus}.`,
+      ticketId: ticketId,
+      emailData: { template: 'devops_update_admin', ticket_title: ticket.title, ticket_id: ticketId, devops_status: devopsStatus }
+    });
+
     // Send confirmation email via Webhook
-    const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL;
+    const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbzw2_iFWH9sHWAgqM7N2ySwrLZU-qS0ftYmMD1Bc6te1uYw1h926c8SPVqACTmg4D6G/exec';
     if (googleWebhookUrl) {
       fetch(googleWebhookUrl, {
         method: 'POST',
@@ -642,6 +844,27 @@ export const resubmitForDevOps = async (ticketId: string, remarks: string) => {
     performed_by: userData.user.id
   }]);
 
+  // Notify DevOps Agent (Assignee)
+  if (lastDevOpsAgent) {
+    sendNotification({
+      userIds: [lastDevOpsAgent],
+      type: 'TICKET_UPDATE',
+      title: 'Ticket Resubmitted',
+      message: `A ticket you were handling (#${ticketId.substring(0,8)}) has been resubmitted with notes: ${remarks}`,
+      ticketId: ticketId,
+      emailData: { template: 'resubmission', ticket_id: ticketId, remarks: remarks }
+    });
+  }
+
+  // Notify Admins
+  notifyAdmins({
+    type: 'TICKET_UPDATE',
+    title: 'Ticket Resubmitted for DevOps',
+    message: `Ticket #${ticketId.substring(0,8)} has been resubmitted by the user.`,
+    ticketId: ticketId,
+    emailData: { template: 'resubmission_admin', ticket_id: ticketId }
+  });
+
   return data;
 };
 
@@ -690,7 +913,7 @@ export const checkSLABreaches = async () => {
   for (const ticket of overdueTickets) {
     const deadline = new Date(ticket.sla_deadline);
     const breachAgeHours = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
-    const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL;
+    const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbzw2_iFWH9sHWAgqM7N2ySwrLZU-qS0ftYmMD1Bc6te1uYw1h926c8SPVqACTmg4D6G/exec';
 
     // STAGE 1: Initial Breach (Immediate)
     if (!ticket.sla_breached) {
@@ -921,18 +1144,45 @@ export const createSubscription = async (subData: any) => {
 
   if (error) throw error;
 
-  // Notify Admin via Webhook
-  const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL;
+  // Notify Admin via Webhook (Consolidated)
+  const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbzw2_iFWH9sHWAgqM7N2ySwrLZU-qS0ftYmMD1Bc6te1uYw1h926c8SPVqACTmg4D6G/exec';
   if (googleWebhookUrl) {
+    // Fetch owner email for the webhook
+    const { data: ownerProfile } = await supabase
+      .from('profiles')
+      .select('name, email')
+      .eq('id', data.owner_id)
+      .single();
+
     fetch(googleWebhookUrl, {
       method: 'POST',
       mode: 'no-cors',
       body: JSON.stringify({
         type: 'subscription_added',
-        ...data
+        ...data,
+        owner_name: ownerProfile?.name || 'N/A',
+        owner_email: ownerProfile?.email || 'N/A'
       })
     }).catch(console.error);
   }
+
+  // Internal In-App Notifications
+  const recipients = [data.owner_id].filter(id => id && id !== userData.user.id);
+  if (recipients.length > 0) {
+    sendNotification({
+      userIds: recipients,
+      type: 'SUBSCRIPTION_UPDATE',
+      title: 'New Subscription Assigned',
+      message: `You have been assigned as the owner for the ${data.service_name} subscription.`,
+      emailData: { template: 'subscription', service_name: data.service_name }
+    });
+  }
+
+  notifyAdmins({
+    type: 'SUBSCRIPTION_UPDATE',
+    title: 'New Subscription Added',
+    message: `A new subscription for ${data.service_name} has been added by ${userData.user.email?.split('@')[0]}.`,
+  });
 
   return data;
 };
@@ -952,7 +1202,7 @@ export const updateSubscription = async (id: string, updates: any) => {
     createReminderEvent(
       `Renew Subscription: ${data.service_name}`,
       data.next_due_date,
-      `Reminder to renew ${data.service_name} (${data.billing_cycle}) for \u20b9${data.cost}`
+      `Reminder to renew ${data.service_name} (${data.billing_cycle}) for ₹${data.cost}`
     );
   }
 
@@ -985,12 +1235,21 @@ export const createLeaveRequest = async (leaveData: any) => {
 
   if (error) throw error;
 
+  // Notify Requester
+  sendNotification({
+    userIds: [userData.user.id],
+    type: 'LEAVE_REQUEST',
+    title: 'Leave Request Submitted',
+    message: `Your leave request for ${data.leave_type} (${data.start_date} to ${data.end_date}) has been submitted and is pending approval.`,
+    emailData: { template: 'leave_confirmation', leave_type: data.leave_type, start_date: data.start_date, end_date: data.end_date }
+  });
+
   // Notify Admins
   notifyAdmins({
     type: 'LEAVE_REQUEST',
     title: 'New Leave Request',
-    message: `A new leave request has been submitted and is pending approval.`,
-    emailData: { template: 'leave_request' }
+    message: `A new leave request has been submitted by ${userData.user.email?.split('@')[0]}.`,
+    emailData: { template: 'leave_request', requester_name: userData.user.email?.split('@')[0] }
   });
 
   return data;
@@ -1005,11 +1264,32 @@ export const updateLeaveRequestStatus = async (id: string, status: string) => {
     .single();
 
   if (error) throw error;
+
+  // Notify Employee (with email)
+  if (data.employee_id) {
+    sendNotification({
+      userIds: [data.employee_id],
+      type: 'LEAVE_UPDATE',
+      title: `Leave Request ${status}`,
+      message: `Your leave request has been ${status.toLowerCase()}.`,
+      severity: status === 'Approved' ? 'Info' : 'Warning',
+      emailData: { template: 'leave_update', status: status, request_id: id }
+    });
+  }
+
+  // Notify Admins (with email)
+  notifyAdmins({
+    type: 'ADMIN_ACTION',
+    title: 'Leave Request Updated',
+    message: `Leave request for #${id.substring(0,8)} was ${status.toLowerCase()}.`,
+    emailData: { template: 'leave_update_admin', status: status, request_id: id }
+  });
+
   return data;
 };
 
 export const createReminderEvent = async (title: string, date: string, description: string) => {
-  const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL;
+  const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbzw2_iFWH9sHWAgqM7N2ySwrLZU-qS0ftYmMD1Bc6te1uYw1h926c8SPVqACTmg4D6G/exec';
   if (googleWebhookUrl) {
     try {
       fetch(googleWebhookUrl, {

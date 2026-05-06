@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Search, DollarSign, Calendar, RefreshCw, X, Building2
+  Plus, Search, DollarSign, Calendar, RefreshCw, X, Building2,
+  FileText, Upload, CheckCircle2, Loader2, Link2, ChevronDown
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getSubscriptions, createSubscription, updateSubscription, getAllUsers } from '../lib/api';
@@ -15,6 +16,7 @@ const DS = {
   text: '#dae2fd',
   muted: '#88929b',
   surface: '#0b1326',
+  success: '#4ade80',
 };
 
 const Badge = ({ status }: { status: string }) => {
@@ -42,10 +44,17 @@ export const SubscriptionsHub = () => {
 
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showNotifyDropdown, setShowNotifyDropdown] = useState(false);
   
   const [formData, setFormData] = useState({
-    service_name: '', cost: '', billing_cycle: 'Monthly', next_due_date: '', owner_id: '', status: 'Active', comment: ''
+    service_name: '', cost: '', billing_cycle: 'Monthly', next_due_date: '', owner_id: '', notify_user_ids: [] as string[], status: 'Active', comment: ''
   });
+
+  const [showPaymentDrawer, setShowPaymentDrawer] = useState(false);
+  const [selectedSub, setSelectedSub] = useState<any>(null);
+  const [paymentComment, setPaymentComment] = useState('');
+  const [paymentFile, setPaymentFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -54,16 +63,18 @@ export const SubscriptionsHub = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const subs = await getSubscriptions();
+      const [subs, usrs, { data: { user } }] = await Promise.all([
+        getSubscriptions(),
+        getAllUsers(),
+        supabase.auth.getUser()
+      ]);
       setSubscriptions(subs || []);
-    } catch (e) {
-      console.error('Failed to load subscriptions:', e);
-    }
-    try {
-      const usrs = await getAllUsers();
       setUsers(usrs || []);
+      if (user && !formData.owner_id) {
+        setFormData(prev => ({ ...prev, owner_id: user.id }));
+      }
     } catch (e) {
-      console.error('Failed to load users:', e);
+      console.error('Failed to load data:', e);
     }
     setLoading(false);
   };
@@ -76,6 +87,7 @@ export const SubscriptionsHub = () => {
       billing_cycle: sub.billing_cycle,
       next_due_date: sub.next_due_date,
       owner_id: sub.owner_id || '',
+      notify_user_ids: sub.notify_user_ids || [],
       status: sub.status,
       comment: sub.comment || ''
     });
@@ -84,7 +96,7 @@ export const SubscriptionsHub = () => {
 
   const handleAddNew = () => {
     setEditingId(null);
-    setFormData({ service_name: '', cost: '', billing_cycle: 'Monthly', next_due_date: '', owner_id: '', status: 'Active', comment: '' });
+    setFormData({ service_name: '', cost: '', billing_cycle: 'Monthly', next_due_date: '', owner_id: '', notify_user_ids: [], status: 'Active', comment: '' });
     setShowModal(true);
   };
 
@@ -96,6 +108,7 @@ export const SubscriptionsHub = () => {
         billing_cycle: formData.billing_cycle,
         next_due_date: formData.next_due_date,
         owner_id: formData.owner_id || null,
+        notify_user_ids: formData.notify_user_ids || [],
         status: formData.status,
         comment: formData.comment || null
       };
@@ -120,17 +133,60 @@ export const SubscriptionsHub = () => {
       else if (cycle === 'Quarterly') nextDate.setMonth(nextDate.getMonth() + 3);
       else if (cycle === 'Yearly') nextDate.setFullYear(nextDate.getFullYear() + 1);
       
-      await updateSubscription(id, { next_due_date: nextDate.toISOString().split('T')[0] });
+      let proofUrl = null;
+      if (paymentFile) {
+        setUploading(true);
+        const fileExt = paymentFile.name.split('.').pop();
+        const fileName = `${id}_${Date.now()}.${fileExt}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('payment-proofs')
+          .upload(fileName, paymentFile);
+        
+        if (uploadError) throw uploadError;
+        
+        const { data: { publicUrl } } = supabase.storage
+          .from('payment-proofs')
+          .getPublicUrl(fileName);
+        proofUrl = publicUrl;
+      }
+
+      await updateSubscription(id, { 
+        next_due_date: nextDate.toISOString().split('T')[0],
+        comment: paymentComment ? (selectedSub?.comment ? `${selectedSub.comment}\n---\nPayment Notes: ${paymentComment}` : paymentComment) : selectedSub?.comment,
+        payment_proof_url: proofUrl || selectedSub?.payment_proof_url
+      });
+
+      setShowPaymentDrawer(false);
+      setPaymentComment('');
+      setPaymentFile(null);
       fetchData();
     } catch (e) {
       console.error(e);
-      alert('Failed to renew subscription');
+      alert('Failed to process payment & renew');
+    } finally {
+      setUploading(false);
     }
+  };
+
+  const openPaymentDrawer = (sub: any) => {
+    setSelectedSub(sub);
+    setPaymentComment('');
+    setPaymentFile(null);
+    setShowPaymentDrawer(true);
+  };
+
+  const toggleNotifyUser = (userId: string) => {
+    setFormData(prev => {
+      const ids = prev.notify_user_ids.includes(userId)
+        ? prev.notify_user_ids.filter(id => id !== userId)
+        : [...prev.notify_user_ids, userId];
+      return { ...prev, notify_user_ids: ids };
+    });
   };
 
   const filtered = subscriptions.filter(s => 
     s.service_name?.toLowerCase().includes(search.toLowerCase()) ||
-    s.owner?.name?.toLowerCase().includes(search.toLowerCase())
+    s.comment?.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -194,10 +250,19 @@ export const SubscriptionsHub = () => {
                   <td style={{ padding: '16px 24px', color: DS.muted, fontSize: '0.8rem' }}>{s.billing_cycle}</td>
                   <td style={{ padding: '16px 24px', color: DS.text, fontSize: '0.8rem', fontWeight: 600 }}>{s.next_due_date}</td>
                   <td style={{ padding: '16px 24px' }}><Badge status={s.status} /></td>
-                  <td style={{ padding: '16px 24px', color: DS.muted, fontSize: '0.75rem', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.comment}>{s.comment || '—'}</td>
+                  <td style={{ padding: '16px 24px', color: DS.muted, fontSize: '0.75rem', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.comment}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {s.payment_proof_url && (
+                        <a href={s.payment_proof_url} target="_blank" rel="noreferrer" style={{ color: DS.primary, display: 'flex' }} title="View Proof">
+                          <Link2 size={14} />
+                        </a>
+                      )}
+                      {s.comment || '—'}
+                    </div>
+                  </td>
                   <td style={{ padding: '16px 24px' }}>
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <button onClick={() => handleRenew(s.id, s.next_due_date, s.billing_cycle)} style={{ background: 'rgba(74,222,128,0.1)', color: '#4ade80', border: 'none', borderRadius: '8px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
+                      <button onClick={() => openPaymentDrawer(s)} style={{ background: 'rgba(74,222,128,0.1)', color: '#4ade80', border: 'none', borderRadius: '8px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
                         Mark Paid & Renew
                       </button>
                       <button onClick={() => handleEdit(s)} style={{ background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, borderRadius: '8px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
@@ -209,7 +274,7 @@ export const SubscriptionsHub = () => {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ padding: '48px', textAlign: 'center', color: DS.muted }}>No subscriptions found.</td>
+                  <td colSpan={8} style={{ padding: '48px', textAlign: 'center', color: DS.muted }}>No subscriptions found.</td>
                 </tr>
               )}
             </tbody>
@@ -237,14 +302,15 @@ export const SubscriptionsHub = () => {
             </div>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cost (₹)</label>
+              <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Cost (₹)</label>
               <div style={{ position: 'relative' }}>
-                <DollarSign size={16} color={DS.muted} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
+                <div style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: DS.muted }}>₹</div>
                 <input 
                   type="number" 
                   value={formData.cost} 
                   onChange={e => setFormData({ ...formData, cost: e.target.value })} 
-                  style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px 14px 14px 40px', borderRadius: '12px', outline: 'none' }} 
+                  placeholder="0.00" 
+                  style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px 14px 14px 32px', borderRadius: '12px', outline: 'none' }} 
                 />
               </div>
             </div>
@@ -271,40 +337,83 @@ export const SubscriptionsHub = () => {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', position: 'relative' }}>
+              <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Notify Users (For Reminders)</label>
+              <div 
+                onClick={() => setShowNotifyDropdown(!showNotifyDropdown)}
+                style={{ 
+                  width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, 
+                  padding: '12px', borderRadius: '10px', cursor: 'pointer', fontSize: '0.85rem',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                }}
+              >
+                <span>
+                  {formData.notify_user_ids.length === 0 
+                    ? "Select recipients..." 
+                    : `${formData.notify_user_ids.length} selected`}
+                </span>
+                <ChevronDown size={14} style={{ transform: showNotifyDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+              </div>
+
+              {showNotifyDropdown && (
+                <div style={{ 
+                  position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, marginTop: '4px',
+                  maxHeight: '200px', overflowY: 'auto', background: DS.card, 
+                  border: `1px solid ${DS.border}`, borderRadius: '12px', padding: '8px',
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+                  display: 'flex', flexDirection: 'column', gap: '4px'
+                }}>
+                  {users.map(u => (
+                    <div 
+                      key={u.id} 
+                      onClick={(e) => { e.stopPropagation(); toggleNotifyUser(u.id); }}
+                      style={{ 
+                        padding: '8px 12px', borderRadius: '8px', cursor: 'pointer',
+                        background: formData.notify_user_ids.includes(u.id) ? 'rgba(14,165,233,0.1)' : 'transparent',
+                        color: formData.notify_user_ids.includes(u.id) ? DS.primary : DS.text,
+                        fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '10px'
+                      }}
+                    >
+                      <input 
+                        type="checkbox" 
+                        checked={formData.notify_user_ids.includes(u.id)}
+                        readOnly
+                        style={{ accentColor: DS.primary }}
+                      />
+                      {u.name}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Owner (Employee)</label>
+                <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Status</label>
                 <select 
-                  value={formData.owner_id} 
-                  onChange={e => setFormData({ ...formData, owner_id: e.target.value })} 
-                  style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', outline: 'none' }}
+                  value={formData.status} 
+                  onChange={e => setFormData({ ...formData, status: e.target.value })}
+                  style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px', outline: 'none' }}
                 >
-                  <option value="">Unassigned</option>
-                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  <option value="Active">Active</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Cancelled">Cancelled</option>
                 </select>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</label>
-                <select 
-                  value={formData.status} 
-                  onChange={e => setFormData({ ...formData, status: e.target.value })} 
-                  style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', outline: 'none' }}
-                >
-                  <option>Active</option><option>Cancelled</option>
-                </select>
               </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Comments / Discontinuation Reason</label>
+              <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Comment / Reason</label>
               <textarea 
                 value={formData.comment} 
                 onChange={e => setFormData({ ...formData, comment: e.target.value })} 
-                placeholder="Add any internal notes or reasoning..."
-                rows={4} 
-                style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', outline: 'none', resize: 'none' }} 
-              />
-            </div>
+                placeholder="Internal notes or reasoning..."
+                rows={3} 
+              style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', outline: 'none', resize: 'none' }} 
+            />
+          </div>
           </div>
 
           <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
@@ -319,6 +428,87 @@ export const SubscriptionsHub = () => {
               style={{ flex: 2, padding: '16px', background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', color: '#fff', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: 800, boxShadow: '0 8px 24px rgba(14,165,233,0.3)' }}
             >
               {editingId ? 'Update Subscription' : 'Register Subscription'}
+            </button>
+          </div>
+        </div>
+      </Drawer>
+
+      <Drawer
+        isOpen={showPaymentDrawer}
+        onClose={() => !uploading && setShowPaymentDrawer(false)}
+        title="Confirm Payment"
+        subtitle={selectedSub ? `Renewing ${selectedSub.service_name} for ₹${selectedSub.cost}` : ''}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={{ background: 'rgba(14,165,233,0.05)', border: `1px solid ${DS.border}`, borderRadius: '16px', padding: '20px' }}>
+             <p style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '12px' }}>Subscription Details</p>
+             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+               <span style={{ color: DS.text, fontSize: '0.85rem' }}>Current Due</span>
+               <span style={{ color: DS.text, fontSize: '0.85rem', fontWeight: 700 }}>{selectedSub?.next_due_date}</span>
+             </div>
+             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+               <span style={{ color: DS.text, fontSize: '0.85rem' }}>Amount</span>
+               <span style={{ color: '#4ade80', fontSize: '0.85rem', fontWeight: 900 }}>₹{selectedSub?.cost}</span>
+             </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Payment Remarks</label>
+            <textarea 
+              value={paymentComment} 
+              onChange={e => setPaymentComment(e.target.value)} 
+              placeholder="e.g. Paid via Corporate Credit Card, Transaction ID #..."
+              rows={3} 
+              style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', outline: 'none', resize: 'none' }} 
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase' }}>Proof of Payment</label>
+            <div 
+              onClick={() => document.getElementById('payment-file')?.click()}
+              style={{ 
+                border: `2px dashed ${paymentFile ? DS.success : DS.border}`, 
+                borderRadius: '16px', padding: '32px', textAlign: 'center', cursor: 'pointer',
+                background: paymentFile ? 'rgba(74,222,128,0.05)' : 'transparent',
+                transition: 'all 0.2s'
+              }}
+            >
+              <input 
+                id="payment-file" type="file" hidden 
+                onChange={e => setPaymentFile(e.target.files?.[0] || null)} 
+                accept="image/*,.pdf,.doc,.docx"
+              />
+              {paymentFile ? (
+                <div style={{ color: DS.success, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                  <CheckCircle2 size={32} />
+                  <p style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0 }}>{paymentFile.name}</p>
+                  <p style={{ fontSize: '0.7rem', color: DS.muted }}>Click to change file</p>
+                </div>
+              ) : (
+                <div style={{ color: DS.muted, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                  <Upload size={32} />
+                  <p style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0 }}>Click to upload proof</p>
+                  <p style={{ fontSize: '0.7rem' }}>Image, PDF, or Document (Max 5MB)</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+            <button 
+              disabled={uploading}
+              onClick={() => setShowPaymentDrawer(false)} 
+              style={{ flex: 1, padding: '16px', background: 'transparent', color: DS.muted, border: `1px solid ${DS.border}`, borderRadius: '12px', cursor: 'pointer', fontWeight: 700 }}
+            >
+              Cancel
+            </button>
+            <button 
+              disabled={uploading}
+              onClick={() => handleRenew(selectedSub.id, selectedSub.next_due_date, selectedSub.billing_cycle)} 
+              style={{ flex: 2, padding: '16px', background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', color: '#fff', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+            >
+              {uploading ? <Loader2 size={18} className="animate-spin" /> : 'Confirm & Renew'}
             </button>
           </div>
         </div>

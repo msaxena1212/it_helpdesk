@@ -113,7 +113,7 @@ export const Sidebar = () => {
 
       {/* New Ticket quick action */}
       <button
-        onClick={() => navigate('/tickets/new')}
+        onClick={() => navigate('/tickets/new?type=all')}
         style={{
           width: '100%', height: '44px',
           background: 'linear-gradient(135deg, #0ea5e9, #0284c7)',
