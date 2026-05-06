@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import {
   Plus, Search, Filter, ChevronRight, Ticket, CheckCircle2,
   Clock, AlertTriangle, RefreshCw, Users, TrendingUp, Shield, X,
-  Activity, Inbox, AlertCircle, Play, UserPlus, Zap, BarChart3
+  Activity, Lightbulb, TrendingDown, Target, BarChart3, AlertCircle, Zap, UserPlus, Play
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '../lib/supabase';
@@ -14,6 +14,7 @@ import { useAuth } from '../lib/AuthContext';
 import { isSameDay } from 'date-fns';
 import { AnimatePresence } from 'framer-motion';
 import { Drawer } from '../components/Drawer';
+import { Pagination } from '../components/Pagination';
 
 const DS = {
   bg: '#0f172a', card: '#131b2e', cardHigh: '#222a3d',
@@ -71,6 +72,14 @@ export const AdminDashboard = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
 
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter]);
+
   useEffect(() => { 
     fetchData(); 
   }, []);
@@ -109,13 +118,6 @@ export const AdminDashboard = () => {
           title: `Renew: ${s.service_name}`,
           type: 'subscription' as const,
           color: '#4ade80'
-        })),
-        ...ticketData!.filter(t => t.sla_deadline && !['Resolved', 'Closed'].includes(t.status)).map(t => ({
-          id: t.id,
-          date: new Date(t.sla_deadline),
-          title: `SLA: ${t.title}`,
-          type: 'ticket' as const,
-          color: t.priority === 'Critical' ? '#ff4444' : '#0ea5e9'
         }))
       ];
       setCalendarEvents(events);
@@ -134,6 +136,48 @@ export const AdminDashboard = () => {
       setShowDayModal(true);
     }
   };
+
+  const getInsights = () => {
+    const insights = [];
+    if (tickets.length === 0) return [{ title: "System Ready", description: "No operational data yet.", type: 'success', icon: Activity }];
+
+    // 1. SLA Breach
+    const breached = tickets.filter(t => t.sla_deadline && new Date(t.sla_deadline) < new Date() && !['Resolved', 'Closed'].includes(t.status)).length;
+    if (breached > 0) {
+      insights.push({
+        title: "SLA Violations",
+        description: `${breached} critical tickets have exceeded their response time targets.`,
+        type: 'danger',
+        icon: AlertCircle
+      });
+    }
+
+    // 2. Resource Allocation
+    const unassigned = tickets.filter(t => !t.assigned_to && !['Resolved', 'Closed'].includes(t.status)).length;
+    if (unassigned > 5) {
+      insights.push({
+        title: "Resource Gap",
+        description: `${unassigned} active tickets are currently unassigned. Bottleneck detected.`,
+        type: 'warning',
+        icon: TrendingDown
+      });
+    }
+
+    // 3. Performance Trend
+    const resolvedCount = tickets.filter(t => t.status === 'Resolved').length;
+    if (resolvedCount > 10) {
+      insights.push({
+        title: "Velocity Peak",
+        description: `Team efficiency is up. ${resolvedCount} tickets resolved in the current cycle.`,
+        type: 'success',
+        icon: Target
+      });
+    }
+
+    return insights.length > 0 ? insights : [{ title: "Optimal Performance", description: "All support metrics are within target thresholds.", type: 'success', icon: Activity }];
+  };
+
+  const insights = getInsights();
 
   const getSlaBreachRate = () => {
     if (tickets.length === 0) return '0%';
@@ -162,8 +206,7 @@ export const AdminDashboard = () => {
   const filtered = tickets.filter(t => {
     const matchSearch = t.title?.toLowerCase().includes(search.toLowerCase()) ||
       t.id?.toLowerCase().includes(search.toLowerCase()) ||
-      t.employee?.department?.toLowerCase().includes(search.toLowerCase()) ||
-      search.toLowerCase() === 'engineering' || search.toLowerCase() === 'hr' || search.toLowerCase() === 'sales'; // Basic mock filtering for departments
+      t.employee?.department?.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === 'all' || t.status === statusFilter;
     return matchSearch && matchStatus;
   });
@@ -180,11 +223,11 @@ export const AdminDashboard = () => {
   const statusTabs = ['all', 'Open', 'In Progress', 'Waiting for User', 'Resolved', 'Closed'];
 
   return (
-    <div style={{ minHeight: '100vh', background: DS.bg, padding: '32px', fontFamily: "'Inter', sans-serif" }}>
+    <>
+      <div style={{ minHeight: '100vh', background: DS.bg, padding: '32px', fontFamily: "'Inter', sans-serif" }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
 
         {/* Header */}
-        {/* Header - Minimal & Action Oriented */}
         <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }}>
           <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
             <div>
@@ -237,7 +280,6 @@ export const AdminDashboard = () => {
                    <div style={{ background: DS.surface, border: `1px solid ${DS.border}`, borderRadius: '20px', padding: '16px', textAlign: 'center', position: 'relative' }}>
                       <p style={{ fontSize: '0.65rem', color: DS.muted, fontWeight: 800, textTransform: 'uppercase', marginBottom: '8px' }}>SLA Compliance</p>
                       <p style={{ fontSize: '1.4rem', fontWeight: 900, color: DS.success }}>94.2%</p>
-                      {slaBreachingCount > 0 && <p style={{ fontSize: '0.65rem', color: '#ff4444', fontWeight: 700, position: 'absolute', bottom: '8px', left: 0, right: 0 }}>{slaBreachingCount} tickets breaching in &lt; 2h</p>}
                    </div>
                    <div style={{ background: DS.surface, border: `1px solid ${DS.border}`, borderRadius: '20px', padding: '16px', textAlign: 'center' }}>
                       <p style={{ fontSize: '0.65rem', color: DS.muted, fontWeight: 800, textTransform: 'uppercase', marginBottom: '8px' }}>Avg Resolution</p>
@@ -248,38 +290,12 @@ export const AdminDashboard = () => {
                       <p style={{ fontSize: '1.4rem', fontWeight: 900, color: DS.primary }}>{teamCount}</p>
                    </div>
                 </div>
-                
-                <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '16px' }}>Department Load</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                   <div onClick={() => setSearch('Engineering')} style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', padding: '4px', borderRadius: '8px' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 700, color: DS.text, width: '80px' }}>Engineering</span>
-                      <div style={{ flex: 1, height: '6px', background: DS.surface, borderRadius: '3px', overflow: 'hidden' }}>
-                         <div style={{ width: '65%', height: '100%', background: DS.primary }} />
-                      </div>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.muted }}>65%</span>
-                   </div>
-                   <div onClick={() => setSearch('HR')} style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', padding: '4px', borderRadius: '8px' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 700, color: DS.text, width: '80px' }}>HR</span>
-                      <div style={{ flex: 1, height: '6px', background: DS.surface, borderRadius: '3px', overflow: 'hidden' }}>
-                         <div style={{ width: '20%', height: '100%', background: '#c084fc' }} />
-                      </div>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.muted }}>20%</span>
-                   </div>
-                   <div onClick={() => setSearch('Sales')} style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', padding: '4px', borderRadius: '8px' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 700, color: DS.text, width: '80px' }}>Sales</span>
-                      <div style={{ flex: 1, height: '6px', background: DS.surface, borderRadius: '3px', overflow: 'hidden' }}>
-                         <div style={{ width: '15%', height: '100%', background: '#4ade80' }} />
-                      </div>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 800, color: DS.muted }}>15%</span>
-                   </div>
-                </div>
               </div>
 
               {/* 🎟️ TICKET TRIAGE PANEL */}
               <div style={{ background: DS.card, borderRadius: '32px', padding: '32px', border: `1px solid ${DS.border}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                    <h3 style={{ fontSize: '1.1rem', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}><Zap size={20} color={DS.warning} /> Triage Panel</h3>
-                   <span style={{ fontSize: '0.7rem', fontWeight: 800, color: DS.warning, background: 'rgba(255,184,110,0.1)', padding: '4px 10px', borderRadius: '8px' }}>Action Needed</span>
                 </div>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -292,30 +308,10 @@ export const AdminDashboard = () => {
                                <p style={{ fontSize: '0.85rem', fontWeight: 700, color: DS.text, margin: 0 }}>{t.title}</p>
                             </div>
                             <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                               <button style={{ flex: 1, background: 'rgba(14,165,233,0.1)', color: DS.primary, border: `1px solid rgba(14,165,233,0.2)`, padding: '6px', borderRadius: '8px', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><UserPlus size={14} /> Assign</button>
                                <button onClick={() => navigate(`/tickets/${t.id}`)} style={{ flex: 1, background: DS.card, border: `1px solid ${DS.border}`, color: DS.text, padding: '6px', borderRadius: '8px', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><Play size={14} /> Open</button>
                             </div>
                          </div>
                       ))}
-                      {tickets.filter(t => !t.assigned_to && t.status === 'Open').length === 0 && <p style={{ fontSize: '0.8rem', color: DS.muted, fontStyle: 'italic' }}>None at the moment.</p>}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>High Priority</h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {tickets.filter(t => (t.priority === 'High' || t.priority === 'Critical') && t.status !== 'Resolved' && t.status !== 'Closed').slice(0, 2).map(t => (
-                         <div key={t.id} style={{ background: DS.surface, border: `1px solid ${DS.border}`, borderRadius: '16px', padding: '16px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                               <p style={{ fontSize: '0.85rem', fontWeight: 700, color: DS.text, margin: 0 }}>{t.title}</p>
-                               <PriorityDot priority={t.priority} />
-                            </div>
-                            <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                               <button onClick={() => navigate(`/tickets/${t.id}`)} style={{ flex: 1, background: 'rgba(255,68,68,0.1)', color: '#ff4444', border: `1px solid rgba(255,68,68,0.2)`, padding: '6px', borderRadius: '8px', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><Play size={14} /> Handle</button>
-                            </div>
-                         </div>
-                      ))}
-                      {tickets.filter(t => (t.priority === 'High' || t.priority === 'Critical') && t.status !== 'Resolved' && t.status !== 'Closed').length === 0 && <p style={{ fontSize: '0.8rem', color: DS.muted, fontStyle: 'italic' }}>No active high priority items.</p>}
                     </div>
                   </div>
                 </div>
@@ -323,62 +319,27 @@ export const AdminDashboard = () => {
            </div>
 
            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-              {/* 📌 SYSTEM STATUS */}
+              {/* 📊 SYSTEM INSIGHTS */}
               <div style={{ background: DS.card, borderRadius: '32px', padding: '32px', border: `1px solid ${DS.border}` }}>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 900, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}><Activity size={20} color={DS.primary} /> System Status</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div style={{ background: DS.surface, padding: '20px', borderRadius: '20px', border: `1px solid ${DS.border}` }}>
-                    <p style={{ fontSize: '0.75rem', color: DS.muted, textTransform: 'uppercase', fontWeight: 800, marginBottom: '8px' }}>Open Tickets</p>
-                    <p style={{ fontSize: '1.75rem', fontWeight: 900, color: DS.text }}>{tickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed').length}</p>
-                  </div>
-                  <div style={{ background: DS.surface, padding: '20px', borderRadius: '20px', border: `1px solid ${DS.border}` }}>
-                    <p style={{ fontSize: '0.75rem', color: DS.muted, textTransform: 'uppercase', fontWeight: 800, marginBottom: '8px' }}>Pending Approvals</p>
-                    <p style={{ fontSize: '1.75rem', fontWeight: 900, color: DS.warning }}>{tickets.filter(t => t.status === 'Waiting for User').length}</p>
-                  </div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 900, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}><Lightbulb size={20} color={DS.warning} /> Operational Insights</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {insights.map((insight, idx) => (
+                    <div key={idx} style={{ display: 'flex', gap: '16px', background: DS.surface, padding: '20px', borderRadius: '20px', border: `1px solid ${insight.type === 'danger' ? 'rgba(255,68,68,0.2)' : insight.type === 'warning' ? 'rgba(255,184,110,0.2)' : DS.border}` }}>
+                      <div style={{ background: insight.type === 'danger' ? 'rgba(255,68,68,0.1)' : insight.type === 'warning' ? 'rgba(255,184,110,0.1)' : 'rgba(14,165,233,0.1)', padding: '10px', borderRadius: '12px', height: 'fit-content' }}>
+                        <insight.icon size={20} color={insight.type === 'danger' ? '#ff4444' : insight.type === 'warning' ? '#ffb86e' : DS.primary} />
+                      </div>
+                      <div>
+                        <p style={{ fontSize: '0.9rem', fontWeight: 800, color: DS.text, margin: '0 0 4px' }}>{insight.title}</p>
+                        <p style={{ fontSize: '0.8rem', color: DS.muted, margin: 0, lineHeight: 1.5 }}>{insight.description}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              {/* 📊 SYSTEM INSIGHTS */}
-              <div style={{ background: DS.card, borderRadius: '32px', padding: '32px', border: `1px solid ${DS.border}` }}>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 900, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}><TrendingUp size={20} color={DS.primary} /> System Insights</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: DS.surface, padding: '20px', borderRadius: '20px' }}>
-                    <span style={{ fontSize: '0.85rem', color: DS.muted, fontWeight: 700 }}>Tickets this month</span>
-                    <span style={{ fontSize: '1.4rem', fontWeight: 900, color: DS.text }}>{tickets.filter(t => new Date(t.created_at).getMonth() === new Date().getMonth()).length}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: DS.surface, padding: '20px', borderRadius: '20px' }}>
-                    <span style={{ fontSize: '0.85rem', color: DS.muted, fontWeight: 700 }}>Most frequent issue</span>
-                    <span style={{ fontSize: '1rem', fontWeight: 900, color: DS.warning }}>Access Request</span>
-                  </div>
-                </div>
-              </div>
               {/* 👥 TEAM ACTIVITY */}
               <div style={{ background: DS.card, borderRadius: '32px', padding: '32px', border: `1px solid ${DS.border}`, flex: 1 }}>
                 <h3 style={{ fontSize: '1.1rem', fontWeight: 900, marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}><Users size={20} color={DS.primary} /> Team Activity</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                   <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-                     <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(14,165,233,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: DS.primary, fontWeight: 800, fontSize: '0.8rem' }}>AS</div>
-                     <div>
-                       <p style={{ fontSize: '0.9rem', fontWeight: 700, color: DS.text, marginBottom: '2px' }}>Alex assigned Ticket #829</p>
-                       <p style={{ fontSize: '0.75rem', color: DS.muted, fontWeight: 600 }}>10 mins ago</p>
-                     </div>
-                   </div>
-                   <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-                     <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(74,222,128,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: DS.success, fontWeight: 800, fontSize: '0.8rem' }}>MJ</div>
-                     <div>
-                       <p style={{ fontSize: '0.9rem', fontWeight: 700, color: DS.text, marginBottom: '2px' }}>Mike resolved Network Issue</p>
-                       <p style={{ fontSize: '0.75rem', color: DS.muted, fontWeight: 600 }}>45 mins ago</p>
-                     </div>
-                   </div>
-                   <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-                     <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,184,110,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: DS.warning, fontWeight: 800, fontSize: '0.8rem' }}>SJ</div>
-                     <div>
-                       <p style={{ fontSize: '0.9rem', fontWeight: 700, color: DS.text, marginBottom: '2px' }}>Sarah escalated Database Alert</p>
-                       <p style={{ fontSize: '0.75rem', color: DS.muted, fontWeight: 600 }}>2 hours ago</p>
-                     </div>
-                   </div>
-                </div>
-
                 <div style={{ marginTop: '40px' }}>
                    <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: DS.muted, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '16px' }}>Schedule</h4>
                    <MiniCalendar events={calendarEvents} onDateClick={(date) => {
@@ -390,8 +351,6 @@ export const AdminDashboard = () => {
               </div>
            </div>
         </div>
-
-
 
         {/* Stats Grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
@@ -466,7 +425,7 @@ export const AdminDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.map((ticket) => (
+                    {filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((ticket) => (
                       <tr
                         key={ticket.id}
                         style={{ borderTop: `1px solid ${DS.border}`, cursor: 'pointer', transition: 'background 0.15s' }}
@@ -496,6 +455,14 @@ export const AdminDashboard = () => {
                 </table>
               )}
             </div>
+            <Pagination 
+              currentPage={currentPage}
+              totalPages={Math.ceil(filtered.length / itemsPerPage)}
+              onPageChange={setCurrentPage}
+              totalItems={filtered.length}
+              itemsPerPage={itemsPerPage}
+            />
+          </div>
           </div>
       </div>
 
@@ -534,6 +501,6 @@ export const AdminDashboard = () => {
             ))}
           </div>
         </Drawer>
-    </div>
-  );
+      </>
+    );
 };

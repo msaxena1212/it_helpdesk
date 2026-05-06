@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
+import { Pagination } from '../components/Pagination';
 
 const DS = {
   bg: '#0f172a', card: '#131b2e', cardHigh: '#222a3d',
@@ -20,7 +21,15 @@ export const AssetAudit = () => {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterAction, setFilterAction] = useState('all');
+   const [filterAction, setFilterAction] = useState('all');
+ 
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, filterAction]);
 
   useEffect(() => {
     fetchLogs();
@@ -157,7 +166,7 @@ export const AssetAudit = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredLogs.map((log, i) => (
+              {filteredLogs.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((log, i) => (
                 <motion.tr 
                   key={log.id} 
                   initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}

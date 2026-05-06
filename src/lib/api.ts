@@ -21,6 +21,59 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
   'superadmin': Object.values(PERMISSIONS)
 };
 
+// --- Notification Engine ---
+
+export const sendNotification = async (params: {
+  userIds: string[],
+  type: string,
+  title: string,
+  message: string,
+  severity?: 'Info' | 'Warning' | 'High',
+  ticketId?: string,
+  emailData?: any
+}) => {
+  const { userIds, type, title, message, severity = 'Info', ticketId, emailData } = params;
+  
+  if (userIds.length === 0) return;
+
+  // 1. Database Notifications
+  const notifications = userIds.map(uid => ({
+    user_id: uid,
+    type,
+    title,
+    message,
+    severity,
+    ticket_id: ticketId,
+    is_read: false
+  }));
+
+  const { error } = await supabase.from('notifications').insert(notifications);
+  if (error) console.error("Notification Error:", error);
+
+  // 2. Email Webhook (External)
+  const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL;
+  if (googleWebhookUrl && emailData) {
+    fetch(googleWebhookUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      body: JSON.stringify({
+        type: 'email_notification',
+        subject: title,
+        message,
+        ...emailData,
+        app_url: window.location.origin + (ticketId ? `/tickets/${ticketId}` : '')
+      })
+    }).catch(err => console.error("Email Webhook Error:", err));
+  }
+};
+
+export const notifyAdmins = async (params: Omit<Parameters<typeof sendNotification>[0], 'userIds'>) => {
+  const { data: admins } = await supabase.from('profiles').select('id').in('role', ['admin', 'superadmin']);
+  if (admins) {
+    await sendNotification({ ...params, userIds: admins.map(a => a.id) });
+  }
+};
+
 export const createTicket = async (ticketData: any) => {
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) throw new Error('Not authenticated');
@@ -180,6 +233,31 @@ export const createTicket = async (ticketData: any) => {
     console.warn("VITE_GOOGLE_WEBHOOK_URL is not set in .env");
   }
 
+  // Notify Admins
+  notifyAdmins({
+    type: 'NEW_TICKET',
+    title: `New Ticket: ${data.title}`,
+    message: `${requesterName} raised a new ${data.issue_type} ticket. Priority: ${data.priority}`,
+    severity: data.priority === 'Critical' ? 'High' : 'Info',
+    ticketId: data.id,
+    emailData: {
+      template: 'ticket_created',
+      ticket_id: data.id,
+      requester_name: requesterName
+    }
+  });
+
+  // Notify Assignee if auto-assigned
+  if (assignedTo) {
+    sendNotification({
+      userIds: [assignedTo],
+      type: 'TICKET_ASSIGNED',
+      title: 'Ticket Assigned to You',
+      message: `You have been assigned to: ${data.title}`,
+      ticketId: data.id
+    });
+  }
+
   // Create Calendar Reminder Event for Ticket SLA
   if (data.sla_deadline) {
     createReminderEvent(
@@ -231,20 +309,23 @@ export const assignTicket = async (ticketId: string, adminId: string) => {
     performed_by: userData.user?.id
   }]);
 
-  // Sync assignment to Google Sheets
-  const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL;
-  if (googleWebhookUrl) {
-    fetch(googleWebhookUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      body: JSON.stringify({
-        type: 'update',
-        id: ticketId,
-        assigned_to_name: data.assigned?.name || 'Unassigned',
-        status: data.status
-      })
-    }).catch(console.error);
-  }
+  // Notify Assignee
+  sendNotification({
+    userIds: [adminId],
+    type: 'TICKET_ASSIGNED',
+    title: 'New Ticket Assigned',
+    message: `You have been assigned to ticket #${ticketId.substring(0,8)}: ${data.title}`,
+    ticketId: ticketId,
+    emailData: { template: 'assignment', ticket_title: data.title }
+  });
+
+  // Notify Admins of assignment action
+  notifyAdmins({
+    type: 'ADMIN_ACTION',
+    title: 'Ticket Assigned',
+    message: `Admin assigned ticket #${ticketId.substring(0,8)} to another team member.`,
+    ticketId: ticketId
+  });
 
   return data;
 };
@@ -303,19 +384,25 @@ export const updateStatus = async (ticketId: string, oldStatus: string, newStatu
     performed_by: userData.user.id
   }]);
 
-  // Sync status to Google Sheets
-  const googleWebhookUrl = import.meta.env.VITE_GOOGLE_WEBHOOK_URL;
-  if (googleWebhookUrl) {
-    fetch(googleWebhookUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      body: JSON.stringify({
-        type: 'update',
-        id: ticketId,
-        status: newStatus
-      })
-    }).catch(console.error);
+  // Notify Requester
+  if (data.employee_id) {
+    sendNotification({
+      userIds: [data.employee_id],
+      type: 'STATUS_CHANGE',
+      title: 'Ticket Status Updated',
+      message: `Your ticket "${data.title}" is now ${newStatus}.`,
+      ticketId: ticketId,
+      emailData: { template: 'status_update', new_status: newStatus }
+    });
   }
+
+  // Notify Admins
+  notifyAdmins({
+    type: 'ADMIN_ACTION',
+    title: 'Status Updated',
+    message: `Ticket #${ticketId.substring(0,8)} status changed to ${newStatus}.`,
+    ticketId: ticketId
+  });
 
   return data;
 };
@@ -736,6 +823,29 @@ export const addComment = async (ticketId: string, comment: string, attachmentUr
     .single();
 
   if (error) throw error;
+
+  // Notify ticket stakeholders
+  const { data: ticket } = await supabase.from('tickets').select('employee_id, assigned_to, title').eq('id', ticketId).single();
+  if (ticket) {
+    const recipients = [ticket.employee_id, ticket.assigned_to].filter(id => id && id !== userData.user.id) as string[];
+    sendNotification({
+      userIds: recipients,
+      type: 'NEW_COMMENT',
+      title: 'New Ticket Comment',
+      message: `A new comment was added to "${ticket.title}"`,
+      ticketId: ticketId,
+      emailData: { template: 'comment', comment_text: comment }
+    });
+  }
+
+  // Notify Admins
+  notifyAdmins({
+    type: 'TICKET_UPDATE',
+    title: 'New Comment Added',
+    message: `An update was made to ticket #${ticketId.substring(0,8)}`,
+    ticketId: ticketId
+  });
+
   return data;
 };
 
@@ -874,6 +984,15 @@ export const createLeaveRequest = async (leaveData: any) => {
     .single();
 
   if (error) throw error;
+
+  // Notify Admins
+  notifyAdmins({
+    type: 'LEAVE_REQUEST',
+    title: 'New Leave Request',
+    message: `A new leave request has been submitted and is pending approval.`,
+    emailData: { template: 'leave_request' }
+  });
+
   return data;
 };
 

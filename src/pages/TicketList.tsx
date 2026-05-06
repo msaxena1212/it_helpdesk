@@ -8,11 +8,13 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
+import { Pagination } from '../components/Pagination';
 
 const DS = {
   bg: '#0f172a', card: '#131b2e', cardHigh: '#222a3d',
   border: 'rgba(14,165,233,0.12)', primary: '#0ea5e9',
   text: '#dae2fd', muted: '#88929b', surface: '#0b1326',
+  success: '#4ade80', danger: '#ff4444', warning: '#ffb86e',
 };
 
 const Badge = ({ status, customFields }: { status: string; customFields?: any }) => {
@@ -68,6 +70,10 @@ export const TicketList = () => {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [searchFocused, setSearchFocused] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   useEffect(() => {
     const s = searchParams.get('status');
@@ -78,6 +84,7 @@ export const TicketList = () => {
 
   const handleStatusChange = (s: string) => {
     setStatusFilter(s);
+    setCurrentPage(1);
     setSearchParams(prev => {
       if (s === 'all') prev.delete('status');
       else prev.set('status', s);
@@ -87,6 +94,7 @@ export const TicketList = () => {
 
   const handleSearchChange = (q: string) => {
     setSearch(q);
+    setCurrentPage(1);
     setSearchParams(prev => {
       if (!q) prev.delete('search');
       else prev.set('search', q);
@@ -167,6 +175,9 @@ export const TicketList = () => {
       return dateB - dateA;
     });
   }
+
+  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+  const paginatedData = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const loggedInName = profile?.name || '';
   const hideRequester = filtered.length > 0 && filtered.every(t => (t.employee?.name || t.guest_name || 'Guest') === loggedInName);
@@ -317,7 +328,7 @@ export const TicketList = () => {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(t => (
+                {paginatedData.map(t => (
                   <tr 
                     key={t.id} 
                     onClick={() => navigate(`/tickets/${t.id}`)}
@@ -370,6 +381,13 @@ export const TicketList = () => {
                 ))}
               </tbody>
             </table>
+            <Pagination 
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              totalItems={filtered.length}
+              itemsPerPage={itemsPerPage}
+            />
           </div>
         ) : null}
         

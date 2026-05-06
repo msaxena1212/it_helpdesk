@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { getAllActivityLogs } from '../lib/api';
 import { Drawer } from '../components/Drawer';
+import { Pagination } from '../components/Pagination';
 
 const DS = {
   bg: '#0f172a', card: '#131b2e', cardHigh: '#222a3d',
@@ -35,6 +36,14 @@ export const SuperAdminDashboard = () => {
   const [fetchingAudit, setFetchingAudit] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState('');
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeView, search]);
 
   // Portfolio State
   const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -322,7 +331,7 @@ export const SuperAdminDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map(u => (
+                {filteredUsers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(u => (
                   <tr 
                     key={u.id} 
                     onClick={() => fetchPortfolio(u)}
@@ -388,6 +397,13 @@ export const SuperAdminDashboard = () => {
                 ))}
               </tbody>
             </table>
+            <Pagination 
+              currentPage={currentPage}
+              totalPages={Math.ceil(filteredUsers.length / itemsPerPage)}
+              onPageChange={setCurrentPage}
+              totalItems={filteredUsers.length}
+              itemsPerPage={itemsPerPage}
+            />
           </div>
         ) : (
           <>
@@ -437,7 +453,7 @@ export const SuperAdminDashboard = () => {
                       </td></tr>
                     );
 
-                    return filtered.map(log => {
+                    return filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(log => {
                       const isCritical = log.action.includes('Breach') || log.action.includes('L2 Escalation');
                       const isWarning = log.action.includes('L1 Escalation') || log.action.includes('Assign');
                       const badgeBg = isCritical ? 'rgba(255,68,68,0.12)' : isWarning ? 'rgba(255,184,110,0.12)' : 'rgba(14,165,233,0.1)';
@@ -487,6 +503,13 @@ export const SuperAdminDashboard = () => {
                   })()}
                 </tbody>
               </table>
+              <Pagination 
+                currentPage={currentPage}
+                totalPages={Math.ceil(auditLogs.filter(log => !search || log.action.toLowerCase().includes(search.toLowerCase()) || log.performer?.name?.toLowerCase().includes(search.toLowerCase()) || log.ticket?.title?.toLowerCase().includes(search.toLowerCase())).length / itemsPerPage)}
+                onPageChange={setCurrentPage}
+                totalItems={auditLogs.filter(log => !search || log.action.toLowerCase().includes(search.toLowerCase()) || log.performer?.name?.toLowerCase().includes(search.toLowerCase()) || log.ticket?.title?.toLowerCase().includes(search.toLowerCase())).length}
+                itemsPerPage={itemsPerPage}
+              />
             </div>
           </>
         )}

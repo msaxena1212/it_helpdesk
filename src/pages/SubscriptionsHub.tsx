@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getSubscriptions, createSubscription, updateSubscription, getAllUsers } from '../lib/api';
+import { Drawer } from '../components/Drawer';
 
 const DS = {
   bg: '#0f172a',
@@ -216,65 +217,112 @@ export const SubscriptionsHub = () => {
         )}
       </div>
 
-      <AnimatePresence>
-        {showModal && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} style={{ background: DS.card, padding: '32px', borderRadius: '24px', width: '100%', maxWidth: '500px', border: `1px solid ${DS.border}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                <h3 style={{ color: DS.text, fontSize: '1.25rem', fontWeight: 800 }}>{editingId ? 'Edit Subscription' : 'New Subscription'}</h3>
-                <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', color: DS.muted, cursor: 'pointer' }}><X size={20} /></button>
+      <Drawer
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={editingId ? 'Edit Subscription' : 'New Subscription'}
+        subtitle={editingId ? `Update details for ${formData.service_name}` : 'Register a new service subscription'}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Service Name</label>
+              <input 
+                type="text" 
+                value={formData.service_name} 
+                onChange={e => setFormData({ ...formData, service_name: e.target.value })} 
+                placeholder="e.g. AWS, Slack, GitHub"
+                style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', outline: 'none' }} 
+              />
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cost (₹)</label>
+              <div style={{ position: 'relative' }}>
+                <DollarSign size={16} color={DS.muted} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
+                <input 
+                  type="number" 
+                  value={formData.cost} 
+                  onChange={e => setFormData({ ...formData, cost: e.target.value })} 
+                  style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px 14px 14px 40px', borderRadius: '12px', outline: 'none' }} 
+                />
               </div>
+            </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div>
-                  <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Service Name</label>
-                  <input type="text" value={formData.service_name} onChange={e => setFormData({ ...formData, service_name: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }} />
-                </div>
-                <div>
-                  <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Cost (₹)</label>
-                  <input type="number" value={formData.cost} onChange={e => setFormData({ ...formData, cost: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }} />
-                </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Billing Cycle</label>
-                    <select value={formData.billing_cycle} onChange={e => setFormData({ ...formData, billing_cycle: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }}>
-                      <option>Monthly</option><option>Quarterly</option><option>Yearly</option>
-                    </select>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Next Due Date</label>
-                    <input type="date" value={formData.next_due_date} onChange={e => setFormData({ ...formData, next_due_date: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }} />
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Owner (Employee)</label>
-                    <select value={formData.owner_id} onChange={e => setFormData({ ...formData, owner_id: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }}>
-                      <option value="">Unassigned</option>
-                      {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                    </select>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Status</label>
-                    <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px' }}>
-                      <option>Active</option><option>Cancelled</option>
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <label style={{ color: DS.muted, fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', display: 'block' }}>Comment (Optional / Discontinuation Reason)</label>
-                  <textarea value={formData.comment} onChange={e => setFormData({ ...formData, comment: e.target.value })} rows={2} style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '12px', borderRadius: '10px', resize: 'none' }} />
-                </div>
-
-                <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
-                  <button onClick={() => setShowModal(false)} style={{ flex: 1, padding: '12px', background: 'transparent', color: DS.muted, border: 'none', cursor: 'pointer', fontWeight: 700 }}>Cancel</button>
-                  <button onClick={handleSubmit} style={{ flex: 1, padding: '12px', background: '#0ea5e9', color: '#fff', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 700 }}>Save</button>
-                </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Billing Cycle</label>
+                <select 
+                  value={formData.billing_cycle} 
+                  onChange={e => setFormData({ ...formData, billing_cycle: e.target.value })} 
+                  style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', outline: 'none' }}
+                >
+                  <option>Monthly</option><option>Quarterly</option><option>Yearly</option>
+                </select>
               </div>
-            </motion.div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Next Due Date</label>
+                <input 
+                  type="date" 
+                  value={formData.next_due_date} 
+                  onChange={e => setFormData({ ...formData, next_due_date: e.target.value })} 
+                  style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', outline: 'none' }} 
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Owner (Employee)</label>
+                <select 
+                  value={formData.owner_id} 
+                  onChange={e => setFormData({ ...formData, owner_id: e.target.value })} 
+                  style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', outline: 'none' }}
+                >
+                  <option value="">Unassigned</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</label>
+                <select 
+                  value={formData.status} 
+                  onChange={e => setFormData({ ...formData, status: e.target.value })} 
+                  style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', outline: 'none' }}
+                >
+                  <option>Active</option><option>Cancelled</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ color: DS.muted, fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Comments / Discontinuation Reason</label>
+              <textarea 
+                value={formData.comment} 
+                onChange={e => setFormData({ ...formData, comment: e.target.value })} 
+                placeholder="Add any internal notes or reasoning..."
+                rows={4} 
+                style={{ width: '100%', background: DS.surface, color: DS.text, border: `1px solid ${DS.border}`, padding: '14px', borderRadius: '12px', outline: 'none', resize: 'none' }} 
+              />
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+
+          <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+            <button 
+              onClick={() => setShowModal(false)} 
+              style={{ flex: 1, padding: '16px', background: 'transparent', color: DS.muted, border: `1px solid ${DS.border}`, borderRadius: '12px', cursor: 'pointer', fontWeight: 700 }}
+            >
+              Cancel
+            </button>
+            <button 
+              onClick={handleSubmit} 
+              style={{ flex: 2, padding: '16px', background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', color: '#fff', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: 800, boxShadow: '0 8px 24px rgba(14,165,233,0.3)' }}
+            >
+              {editingId ? 'Update Subscription' : 'Register Subscription'}
+            </button>
+          </div>
+        </div>
+      </Drawer>
     </div>
   );
 };

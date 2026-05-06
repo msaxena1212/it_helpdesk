@@ -40,15 +40,15 @@ export const GlobalHeader = () => {
           .select('status, priority, assigned_to, sla_deadline')
           .not('status', 'in', '("Resolved","Closed")');
         if (data) {
-          const unassigned = data.filter(t => !t.assigned_to && t.status === 'Open').length;
-          const critical = data.filter(t => t.priority === 'Critical').length;
+          const unassignedCount = data.filter(t => !t.assigned_to && t.status === 'Open').length;
+          const criticalCount = data.filter(t => t.priority === 'Critical' && !(!t.assigned_to && t.status === 'Open')).length;
           const slaBreaching = data.filter(t =>
             t.sla_deadline &&
             new Date(t.sla_deadline).getTime() - Date.now() < 2 * 3600 * 1000 &&
             new Date(t.sla_deadline).getTime() > Date.now()
           ).length;
-          if (unassigned > 0) newAlerts.push({ label: `${unassigned} Unassigned`, count: unassigned });
-          if (critical > 0) newAlerts.push({ label: `${critical} Critical`, count: critical });
+          if (unassignedCount > 0) newAlerts.push({ label: `${unassignedCount} Unassigned`, count: unassignedCount });
+          if (criticalCount > 0) newAlerts.push({ label: `${criticalCount} Critical`, count: criticalCount });
           if (slaBreaching > 0) newAlerts.push({ label: `${slaBreaching} SLA Breaching Soon`, count: slaBreaching });
         }
         setActionUrl('/tickets?status=Open');
@@ -75,7 +75,7 @@ export const GlobalHeader = () => {
           .not('status', 'in', '("Resolved","Closed")');
         if (data) {
           const waiting = data.filter(t => t.status === 'Waiting for Inventory').length;
-          const urgent = data.filter(t => t.priority === 'Critical' || t.priority === 'High').length;
+          const urgent = data.filter(t => (t.priority === 'Critical' || t.priority === 'High') && t.status !== 'Waiting for Inventory').length;
           if (waiting > 0) newAlerts.push({ label: `${waiting} Awaiting Fulfilment`, count: waiting });
           if (urgent > 0) newAlerts.push({ label: `${urgent} High Priority`, count: urgent });
         }
@@ -129,9 +129,6 @@ export const GlobalHeader = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <button onClick={() => navigate('/tickets?status=Active')} style={{ background: 'transparent', border: `1px solid ${DS.border}`, borderRadius: '6px', padding: '6px 12px', color: DS.text, fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}>
                     View Active
-                  </button>
-                  <button onClick={() => navigate('/tickets/new')} style={{ background: DS.primary, border: 'none', borderRadius: '6px', padding: '6px 12px', color: '#fff', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}>
-                    Raise New Request
                   </button>
                   <button onClick={() => setShowAttention(false)} style={{ background: 'transparent', border: 'none', color: DS.muted, cursor: 'pointer', padding: '4px' }}>
                     <X size={16} />

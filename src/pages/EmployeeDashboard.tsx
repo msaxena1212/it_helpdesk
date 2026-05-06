@@ -13,6 +13,7 @@ import { getLeaveRequests, createLeaveRequest, getSubscriptions, createSubscript
 import { CalendarView, MiniCalendar, CalendarEvent } from '../components/CalendarView';
 import { isSameDay, format } from 'date-fns';
 import { Drawer } from '../components/Drawer';
+import { Pagination } from '../components/Pagination';
 
 const DS = {
   bg: '#0f172a',
@@ -79,6 +80,14 @@ export const EmployeeDashboard = () => {
   
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, search]);
 
   // Modals
   const [showLeaveModal, setShowLeaveModal] = useState(false);
@@ -282,7 +291,8 @@ export const EmployeeDashboard = () => {
   });
 
   return (
-    <div style={{ minHeight: '100vh', background: DS.bg, padding: '32px', fontFamily: "'Inter', sans-serif" }}>
+    <>
+      <div style={{ minHeight: '100vh', background: DS.bg, padding: '32px', fontFamily: "'Inter', sans-serif" }}>
       <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
 
         {/* Header - Minimal */}
@@ -397,7 +407,7 @@ export const EmployeeDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredTickets.map(ticket => (
+                {filteredTickets.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(ticket => (
                   <tr key={ticket.id} style={{ borderTop: `1px solid ${DS.border}`, cursor: 'pointer' }} onClick={() => navigate(`/tickets/${ticket.id}`)}>
                     <td style={{ padding: '16px 20px', fontSize: '0.72rem', fontFamily: 'monospace', color: DS.muted, fontWeight: 700 }}>#{ticket.id?.substring(0, 8).toUpperCase()}</td>
                     <td style={{ padding: '16px 20px', color: DS.text, fontWeight: 600, fontSize: '0.875rem' }}>{ticket.title}</td>
@@ -418,7 +428,7 @@ export const EmployeeDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {leaves.map(l => (
+                {leaves.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(l => (
                   <tr key={l.id} style={{ borderTop: `1px solid ${DS.border}` }}>
                     <td style={{ padding: '16px 20px', color: DS.text, fontWeight: 700, fontSize: '0.875rem' }}>{l.leave_type}</td>
                     <td style={{ padding: '16px 20px', color: DS.muted, fontSize: '0.8rem' }}>{l.start_date} to {l.end_date}</td>
@@ -439,7 +449,7 @@ export const EmployeeDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {subscriptions.map(s => (
+                {subscriptions.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(s => (
                   <tr key={s.id} style={{ borderTop: `1px solid ${DS.border}` }}>
                     <td style={{ padding: '16px 20px', color: DS.text, fontWeight: 700, fontSize: '0.875rem' }}>{s.service_name}</td>
                     <td style={{ padding: '16px 20px', color: '#89ceff', fontWeight: 700, fontSize: '0.875rem' }}>₹{s.cost}</td>
@@ -451,6 +461,15 @@ export const EmployeeDashboard = () => {
               </tbody>
             </table>
           )}
+          
+          <Pagination 
+            currentPage={currentPage}
+            totalPages={Math.ceil((activeTab === 'tickets' ? filteredTickets.length : activeTab === 'leaves' ? leaves.length : subscriptions.length) / itemsPerPage)}
+            onPageChange={setCurrentPage}
+            totalItems={activeTab === 'tickets' ? filteredTickets.length : activeTab === 'leaves' ? leaves.length : subscriptions.length}
+            itemsPerPage={itemsPerPage}
+          />
+        </div>
         </div>
       </div>
 
@@ -658,6 +677,6 @@ export const EmployeeDashboard = () => {
             ))}
           </div>
         </Drawer>
-    </div>
+    </>
   );
 };

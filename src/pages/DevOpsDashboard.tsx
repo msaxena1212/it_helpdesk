@@ -13,6 +13,7 @@ import { isSameDay, format } from 'date-fns';
 import { Drawer } from '../components/Drawer';
 import { AnimatePresence } from 'framer-motion';
 import { useAuth } from '../lib/AuthContext';
+import { Pagination } from '../components/Pagination';
 
 const DS = {
   bg: '#0f172a', card: '#131b2e', cardHigh: '#222a3d',
@@ -74,6 +75,14 @@ export const DevOpsDashboard = () => {
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, activeFilter]);
 
   useEffect(() => {
     fetchDevOpsTickets();
@@ -316,7 +325,7 @@ export const DevOpsDashboard = () => {
 
         {/* Request Queue */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {filtered.map(ticket => (
+            {filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map(ticket => (
               <motion.div 
                 key={ticket.id}
                 initial={{ opacity: 0 }}
@@ -368,6 +377,14 @@ export const DevOpsDashboard = () => {
                 </div>
               </motion.div>
             ))}
+            
+            <Pagination 
+              currentPage={currentPage}
+              totalPages={Math.ceil(filtered.length / itemsPerPage)}
+              onPageChange={setCurrentPage}
+              totalItems={filtered.length}
+              itemsPerPage={itemsPerPage}
+            />
 
             {filtered.length === 0 && (
               <div style={{ padding: '64px', textAlign: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: '24px', border: `1px dashed ${DS.border}` }}>

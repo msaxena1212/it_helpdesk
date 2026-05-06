@@ -93,20 +93,25 @@ export const CreateTicket = () => {
   useEffect(() => {
     if (canCreateOnBehalf) {
       getAllUsers().then(data => setUsers(data || [])).catch(console.error);
-    } else if (user) {
+    } 
+    
+    if (user) {
       // Pre-fill for standard user and skip to step 2
       setFormData(prev => ({
         ...prev,
-        employee_id: user.id,
-        name: profile?.name || user.user_metadata?.name || user.email?.split('@')[0] || '',
-        email: user.email || '',
-        department: profile?.department || user.user_metadata?.department || '',
+        employee_id: prev.employee_id || user.id,
+        name: prev.name || profile?.name || user.user_metadata?.name || user.email?.split('@')[0] || '',
+        email: prev.email || user.email || '',
+        department: prev.department || profile?.department || user.user_metadata?.department || '',
         // Auto-select category if there's only one option
-        category: filteredCategories.length === 1 ? filteredCategories[0] : ''
+        category: filteredCategories.length === 1 ? filteredCategories[0] : prev.category
       }));
-      setStep(2); // skip User Info step for regular users
+      
+      if (!canCreateOnBehalf) {
+        setStep(2); // skip User Info step for regular users
+      }
     }
-  }, [user, profile, canCreateOnBehalf, filteredCategories.length]);
+  }, [user, profile, canCreateOnBehalf, filteredCategories]);
 
   const handleUserSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedId = e.target.value;
@@ -285,7 +290,8 @@ export const CreateTicket = () => {
               <select
                 value={formData.category}
                 onChange={e => setFormData({ ...formData, category: e.target.value })}
-                style={{ ...inputStyle, cursor: 'pointer' }}
+                disabled={filteredCategories.length === 1}
+                style={{ ...inputStyle, cursor: filteredCategories.length === 1 ? 'default' : 'pointer', opacity: filteredCategories.length === 1 ? 0.7 : 1 }}
                 onFocus={e => (e.target.style.borderColor = 'rgba(14,165,233,0.5)')}
                 onBlur={e => (e.target.style.borderColor = DS.border)}
               >
@@ -531,8 +537,12 @@ export const CreateTicket = () => {
         <div style={{ padding: '28px 32px', borderBottom: `1px solid ${DS.border}`, background: 'rgba(14,165,233,0.04)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <div>
-              <p style={{ color: DS.muted, fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '4px' }}>New Request</p>
-              <h2 style={{ color: DS.text, fontSize: '1.375rem', fontWeight: 800, letterSpacing: '-0.01em' }}>Raise IT Support Ticket</h2>
+              <p style={{ color: DS.muted, fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '4px' }}>
+                {typeParam === 'deployment' ? 'Deployment Request' : typeParam === 'access' ? 'Access Request' : 'New Request'}
+              </p>
+              <h2 style={{ color: DS.text, fontSize: '1.375rem', fontWeight: 800, letterSpacing: '-0.01em' }}>
+                {typeParam === 'deployment' ? 'Request Deployment' : typeParam === 'access' ? 'Request System Access' : 'Raise IT Support Ticket'}
+              </h2>
             </div>
             {/* Step indicators */}
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>

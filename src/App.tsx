@@ -63,7 +63,7 @@ function AppRoutes() {
     switch (userRole) {
       case 'superadmin': return <AdminDashboard />;
       case 'admin': return <AdminDashboard />;
-      case 'inventory_manager': return <InventoryDashboard />;
+      case 'inventory_manager': return <InventoryDashboard isDashboard />;
       case 'devops': return <DevOpsDashboard />;
       default: return <EmployeeDashboard />;
     }
@@ -89,7 +89,7 @@ function AppRoutes() {
         <Route path="/create-ticket" element={<CreateTicket />} />
         <Route path="/tickets/new" element={<CreateTicket />} />
         <Route path="/tickets/:id" element={<TicketDetail />} />
-        <Route path="/inventory" element={<InventoryDashboard />} />
+        <Route path="/inventory" element={<InventoryDashboard isRequests />} />
         <Route path="/devops" element={<DevOpsDashboard />} />
         <Route path="/subscriptions" element={(userRole === 'admin' || userRole === 'superadmin') ? <SubscriptionsHub /> : <Navigate to="/" replace />} />
       </Route>
